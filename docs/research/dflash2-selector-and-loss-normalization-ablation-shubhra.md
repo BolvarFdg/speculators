@@ -67,6 +67,8 @@ Acceptance length by subset (tokens per round):
 
 Strict is higher on all nine subsets at 5k steps, which prompted adding `strict` as a selectable policy in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217). Mean acceptance length is approximately 2.76 for replace and 2.92 for strict.
 
+![DFlash2 selector miss policy, replace vs strict, 5k training steps](../assets/research/dflash2_selector_5k.png)
+
 #### 25k training steps
 
 | Subset | Replace | Strict | Strict − replace |
@@ -82,6 +84,8 @@ Strict is higher on all nine subsets at 5k steps, which prompted adding `strict`
 | writing | 3.25 | 3.23 | −0.02 |
 
 At 25k steps the results are mixed: strict is higher on five subsets, lower on three, and tied on one. Mean acceptance length is approximately 3.73 for replace and 3.76 for strict. Per-position acceptance rates are close between the two policies.
+
+![DFlash2 selector miss policy, replace vs strict, 25k training steps](../assets/research/dflash2_selector_25k.png)
 
 The training-time validation metric `val/unary_candidate_recall_at_16_epoch` (how often the gold token appears in the unary head's top-16 candidates) favors `strict` at both step counts: 0.687 → 0.713 at 5k, and 0.780 → 0.790 at 25k. This metric is more consistent than the downstream acceptance-length comparison above.
 
@@ -111,6 +115,8 @@ Acceptance length by subset (tokens per round):
 
 Mean acceptance length is very similar between the two normalization schemes, and per-position acceptance rates nearly overlap. Subset-level differences are small and mixed in direction, showing no consistent winner between the two normalization methods at this step count.
 
+![DFlash2 loss normalization, valid-token-count vs effective-weight-sum, 20k training steps](../assets/research/dflash2_normalization_20k.png)
+
 ### Final comparison: pre-strict versus strict
 
 This is a longer-training follow-up to the step-capped ablation above, comparing a pre-strict checkpoint against its strict-policy counterpart from the same training recipe.
@@ -129,6 +135,8 @@ This is a longer-training follow-up to the step-capped ablation above, comparing
 | Mean | 3.28 | 4.27 | +0.99 |
 
 Strict is higher on every subset, with a larger and more consistent margin than the step-capped 5k/25k comparison above.
+
+![DFlash2 final comparison, pre-strict vs strict](../assets/research/dflash2_final_prestrict_vs_strict.png)
 
 ## Observations
 
