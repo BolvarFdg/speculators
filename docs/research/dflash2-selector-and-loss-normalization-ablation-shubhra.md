@@ -16,15 +16,15 @@ tags:
 
 ## Summary
 
-This report compares two DFlash2 training variants on Qwen3.8-27B: the selector's `replace` versus `strict` gold-miss policy (at 5k and 25k training steps), and the `valid_token_count` versus `effective_weight_sum` loss-normalization scheme (at 20k training steps). The `strict` policy improves acceptance length over `replace` across all displayed subsets at 5k steps; the advantage narrows and becomes mixed at 25k steps. The two normalization schemes produce comparable results at 20k steps, with no consistent winner across subsets. A longer, two-epoch `strict`-policy checkpoint with additional parameter changes reaches a substantially higher acceptance length than any of the step-capped runs, but is not a controlled comparison.
+DFlash2's draft-model training had two open design questions worth investigating: how the selector should handle a missing gold token among its top-K candidates, and how the per-position selector loss should be normalized. This report covers ablations on both questions on Qwen3.8-27B, followed by a longer training run that incorporates the resulting change.
+
+For the selector miss policy, an earlier, shorter run showed `strict` improving acceptance length over `replace` on every subset, which motivated adding `strict` as a selectable policy in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217). A longer 25k-step run afterward shows a smaller, mixed difference between the two policies. For loss normalization, `valid_token_count` and `effective_weight_sum` produce comparable acceptance lengths at 20k training steps, with no consistent winner across subsets. A longer, two-epoch run using the `strict` policy reaches a substantially higher acceptance length than any of the step-capped ablation runs.
 
 ## Setup
 
 - Target model: `Qwen/Qwen3.8-27B`.
 - Draft model: DFlash2, trained with the `--selector-miss-policy` flag introduced in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217).
 - Checkpoints evaluated:
-  - replace, 5k steps: `qwen38-dflash2-selector-replace-5k-20261008_002640/checkpoints/0`
-  - strict, 5k steps: `qwen38-dflash2-selector-strict-5k-20261008_111207/checkpoints/0`
   - replace, 25k steps: `qwen38-dflash2-selector-replace-25000steps-20261012_010849/checkpoints/0`
   - strict, 25k steps: `qwen38-dflash2-selector-strict-25000steps-20261009_151402/checkpoints/0`
   - strict, effective-weight-sum normalization, 20k steps: `qwen38-dflash2-selector-strict-effective_weight_sum-20000steps-20261016_155251/checkpoints/0`
@@ -32,7 +32,7 @@ This report compares two DFlash2 training variants on Qwen3.8-27B: the selector'
   - strict, full two epochs: `nm-research/qwen3.8-27B-speculator.dflash2.updatedparams.strict.ckpt1` (Hugging Face Hub)
 - Algorithm settings: block size 8, selector top-K 16.
 - Training data: a prepared version of the open-perfectblend dataset mix.
-- Training: `torchrun`, 4 GPUs per run, seed 42, 1 epoch capped at the step counts listed above for the selector-policy and normalization runs. The full two-epoch checkpoint is a separate, longer training run with additional parameter changes beyond the miss policy.
+- Training: `torchrun`, 4 GPUs per run, seed 42, 1 epoch capped at 25k steps for the selector-policy ablation and 20k steps for the normalization ablation. The full two-epoch checkpoint is a separate, longer training run with additional parameter changes beyond the miss policy.
 - Evaluation: `RedHatAI/speculator_benchmarks` via `evaluate.py ... throughput`.
 - Hardware: 8x NVIDIA H200 node (4 GPUs used per training run).
 
@@ -46,25 +46,7 @@ The strict selector miss policy is implemented in [Speculators PR #1217](https:/
 
 When the verifier's target token is absent from the selector's top-K candidates, `replace` inserts the target into the last candidate slot and trains the selector on that position. `strict` leaves the candidate set unchanged and masks the selector loss for that position; the unary loss remains active.
 
-Acceptance length by subset (tokens per round):
-
-#### 5k training steps
-
-| Subset | Replace | Strict | Strict − replace |
-|---|---:|---:|---:|
-| HumanEval | 3.03 | 3.13 | +0.10 |
-| math_reasoning | 3.79 | 4.05 | +0.26 |
-| qa | 2.74 | 2.91 | +0.17 |
-| question | 2.59 | 2.66 | +0.07 |
-| rag | 2.85 | 3.06 | +0.21 |
-| summarization | 2.38 | 2.56 | +0.18 |
-| tool_call | 2.53 | 2.65 | +0.12 |
-| translation | 2.39 | 2.57 | +0.18 |
-| writing | 2.51 | 2.72 | +0.21 |
-
-Strict is higher on all nine subsets at 5k steps. Mean acceptance length is approximately 2.76 for replace and 2.92 for strict.
-
-#### 25k training steps
+An earlier, shorter run showed `strict` ahead of `replace` on every subset, prompting [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217) to add `strict` as a selectable policy. The table below extends the comparison to 25k training steps (tokens per round):
 
 | Subset | Replace | Strict | Strict − replace |
 |---|---:|---:|---:|
@@ -127,7 +109,7 @@ Mean acceptance length (4.26) is substantially higher than any of the step-cappe
 
 ## Observations
 
-- The `strict` selector miss policy improves acceptance length over `replace` across all displayed subsets at 5k training steps; the advantage narrows and becomes mixed by 25k steps.
+- The `strict` selector miss policy improved acceptance length over `replace` on every subset in an earlier, shorter run, motivating its addition as a selectable training option; at 25k training steps the difference narrows and becomes mixed.
 - `valid_token_count` and `effective_weight_sum` loss normalization produce comparable acceptance lengths at 20k training steps, with no consistent subset-level winner.
 - The full two-epoch checkpoint reaches a notably higher acceptance length than any step-capped run, but combines several changes at once and should not be read as isolating the selector policy's effect.
 - Results above do not include run-to-run variance or confidence intervals; subset-level differences should be interpreted descriptively rather than as statistically significant.
