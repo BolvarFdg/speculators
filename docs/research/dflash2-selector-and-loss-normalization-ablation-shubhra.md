@@ -18,13 +18,13 @@ tags:
 
 DFlash2's draft-model training had several open design questions worth investigating: whether the per-position loss weight `dpace` improves over the alternative, how the selector should handle a missing gold token among its top-K candidates, and how the per-position selector loss should be normalized. This report covers ablations on all three questions on Qwen3.8-27B.
 
-For the per-position loss weight, `dpace` improves acceptance length for DFlash2 at 100K training steps but not consistently at 25k steps, and does not improve DSpark at either step count; `dpace` was kept for DFlash2 and not adopted for DSpark. For the selector miss policy, `strict` improves acceptance length over `replace` on every subset at 5k training steps, which motivated adding `strict` as a selectable policy in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217). At 25k steps the difference narrows and becomes mixed. For loss normalization, `valid_token_count` and `effective_weight_sum` produce comparable acceptance lengths at 20k training steps, with no consistent winner across subsets.
+For the per-position loss weight, `dpace` improves acceptance length for DFlash2 at 5k training steps but not consistently at 25k steps, and does not improve DSpark at either step count; `dpace` was kept for DFlash2 and not adopted for DSpark. For the selector miss policy, `strict` improves acceptance length over `replace` on every subset at 5k training steps, which motivated adding `strict` as a selectable policy in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217). At 25k steps the difference narrows and becomes mixed. For loss normalization, `valid_token_count` and `effective_weight_sum` produce comparable acceptance lengths at 20k training steps, with no consistent winner across subsets.
 
 ## Setup
 
 - Target model: `Qwen/Qwen3.8-27B`.
 - Draft model: DFlash2. DFlash2 drafts tokens with a selector head, which picks candidates from a top-K shortlist, and a unary head; `--selector-miss-policy` (introduced in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217)) controls what happens when the verifier's actual next token isn't in that shortlist during training.
-- Per-position loss weight ablation: `dpace` vs. not `dpace`, for both DFlash2 and DSpark, each trained to 25k and 100K steps. DSpark is a sibling drafter architecture to DFlash2 in the same family of speculators models.
+- Per-position loss weight ablation: `dpace` vs. not `dpace`, for both DFlash2 and DSpark, each trained to 5k and 25k steps. DSpark is a sibling drafter architecture to DFlash2 in the same family of speculators models.
 - Selector-policy ablation: `replace` vs. `strict`, each trained to 5k and 25k steps, from the same base training recipe.
 - Normalization ablation: `valid_token_count` vs. `effective_weight_sum`, each trained to 20k steps with the `strict` policy, from the same base recipe as the selector-policy ablation above.
 - Algorithm settings: block size 8, selector top-K 16.
@@ -41,7 +41,7 @@ The strict selector miss policy is implemented in [Speculators PR #1217](https:/
 
 ### Per-position loss weight: dpace versus not dpace
 
-`dpace` is a per-position loss weighting scheme for the draft-model training loss; the alternative leaves per-position weights uniform. This ablation was run for both DFlash2 and DSpark, at 25k and 100K training steps each. Absolute acceptance length is lower at 100K than at 25k across all four configurations below; this is consistent with the 100K checkpoints being taken mid-schedule rather than at a fully annealed endpoint, so cross-step-count comparisons should not be read as a training-duration effect. Compare `dpace` against not-`dpace` within each step count instead.
+`dpace` is a per-position loss weighting scheme for the draft-model training loss; the alternative leaves per-position weights uniform. This ablation was run for both DFlash2 and DSpark, at 5k and 25k training steps each. Absolute acceptance length is lower at 5k than at 25k across all four configurations below, consistent with less training; compare `dpace` against not-`dpace` within each step count instead of across them.
 
 #### 25k training steps, DFlash2
 
@@ -79,7 +79,7 @@ Not-`dpace` is higher on all nine subsets for DSpark at 25k steps. Mean acceptan
 
 ![DSpark per-position loss weight, dpace vs not dpace, 25k training steps: acceptance length by subset and per-position acceptance rate](../assets/research/dflash2_dpace_25k_dspark.png)
 
-#### 100K training steps, DFlash2
+#### 5k training steps, DFlash2
 
 | Subset | dpace | not dpace | dpace − not dpace |
 |---|---:|---:|---:|
@@ -93,11 +93,11 @@ Not-`dpace` is higher on all nine subsets for DSpark at 25k steps. Mean acceptan
 | translation | 3.05 | 2.91 | +0.14 |
 | writing | 2.67 | 2.58 | +0.09 |
 
-`dpace` is higher on eight of nine subsets for DFlash2 at 100K steps. Mean acceptance length is approximately 3.00 for `dpace` and 2.94 for not-`dpace`.
+`dpace` is higher on eight of nine subsets for DFlash2 at 5k steps. Mean acceptance length is approximately 3.00 for `dpace` and 2.94 for not-`dpace`.
 
-![DFlash2 per-position loss weight, dpace vs not dpace, 100K training steps: acceptance length by subset and per-position acceptance rate](../assets/research/dflash2_dpace_100k_dflash2.png)
+![DFlash2 per-position loss weight, dpace vs not dpace, 5k training steps: acceptance length by subset and per-position acceptance rate](../assets/research/dflash2_dpace_5k_dflash2.png)
 
-#### 100K training steps, DSpark
+#### 5k training steps, DSpark
 
 | Subset | dpace | not dpace | dpace − not dpace |
 |---|---:|---:|---:|
@@ -111,9 +111,9 @@ Not-`dpace` is higher on all nine subsets for DSpark at 25k steps. Mean acceptan
 | translation | 2.84 | 2.88 | −0.04 |
 | writing | 2.65 | 2.72 | −0.06 |
 
-Not-`dpace` is higher on seven of nine subsets for DSpark at 100K steps. Mean acceptance length is approximately 2.94 for `dpace` and 3.00 for not-`dpace`.
+Not-`dpace` is higher on seven of nine subsets for DSpark at 5k steps. Mean acceptance length is approximately 2.94 for `dpace` and 3.00 for not-`dpace`.
 
-![DSpark per-position loss weight, dpace vs not dpace, 100K training steps: acceptance length by subset and per-position acceptance rate](../assets/research/dflash2_dpace_100k_dspark.png)
+![DSpark per-position loss weight, dpace vs not dpace, 5k training steps: acceptance length by subset and per-position acceptance rate](../assets/research/dflash2_dpace_5k_dspark.png)
 
 Across both step counts, `dpace` is at best mixed for DFlash2 and consistently worse than not-`dpace` for DSpark; this is why `dpace` was kept as the default for DFlash2 but not adopted for DSpark.
 
@@ -191,7 +191,7 @@ Mean acceptance length is very similar between the two normalization schemes, an
 
 ## Observations
 
-- `dpace` gives a mixed-to-favorable result for DFlash2 (higher at 100K steps, mixed at 25k) but a consistently unfavorable one for DSpark at both step counts; `dpace` was kept for DFlash2 and not adopted for DSpark.
+- `dpace` gives a mixed-to-favorable result for DFlash2 (higher at 5k steps, mixed at 25k) but a consistently unfavorable one for DSpark at both step counts; `dpace` was kept for DFlash2 and not adopted for DSpark.
 - The `strict` selector miss policy improved acceptance length over `replace` on every subset at 5k training steps, motivating its addition as a selectable training option; at 25k training steps the difference narrows and becomes mixed.
 - `val/unary_candidate_recall_at_16_epoch` consistently favors `strict` over `replace` at both 5k and 25k training steps, even where downstream acceptance length does not.
 - `valid_token_count` and `effective_weight_sum` loss normalization produce comparable acceptance lengths at 20k training steps, with no consistent subset-level winner.
