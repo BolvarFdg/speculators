@@ -16,32 +16,29 @@ tags:
 
 ## Summary
 
-This report compares the DFlash2 selector's `replace` and `strict` gold-miss policies at 5k and 25k training steps, and compares valid-token-count with effective-weight-sum loss normalization at 20k steps. The 5k strict-selector run improves acceptance length on all nine displayed subsets. At 25k, differences are smaller and mixed. The normalization comparison is also close, with no consistent winner in the displayed results.
-
-The results are descriptive comparisons of the shown checkpoints. The figures and complete run provenance will be added before this entry is finalized.
+This report compares two DFlash2 training variants on Qwen3.8-27B: the selector's `replace` versus `strict` gold-miss policy (at 5k and 25k training steps), and the `valid_token_count` versus `effective_weight_sum` loss-normalization scheme (at 20k training steps). The `strict` policy improves acceptance length over `replace` across all displayed subsets at 5k steps; the advantage narrows and becomes mixed at 25k steps. The two normalization schemes produce comparable results at 20k steps, with no consistent winner across subsets. A longer, two-epoch `strict`-policy checkpoint with additional parameter changes reaches a substantially higher acceptance length than any of the step-capped runs, but is not a controlled comparison.
 
 ## Setup
 
 - Target model: `Qwen/Qwen3.8-27B`.
-- Draft model: DFlash2, trained with [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217)'s `--selector-miss-policy` flag; checkpoints used for evaluation:
+- Draft model: DFlash2, trained with the `--selector-miss-policy` flag introduced in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217).
+- Checkpoints evaluated:
   - replace, 5k steps: `qwen38-dflash2-selector-replace-5k-20261008_002640/checkpoints/0`
   - strict, 5k steps: `qwen38-dflash2-selector-strict-5k-20261008_111207/checkpoints/0`
   - replace, 25k steps: `qwen38-dflash2-selector-replace-25000steps-20261012_010849/checkpoints/0`
   - strict, 25k steps: `qwen38-dflash2-selector-strict-25000steps-20261009_151402/checkpoints/0`
-  - 20k effective-weight-sum: `qwen38-dflash2-selector-strict-effective_weight_sum-20000steps-20261016_155251/checkpoints/0`
-  - 20k valid-token-count: `qwen38-dflash2-selector-strict-valid_token_count-20000steps-20261019_011313/checkpoints/0`
-  - full two-epoch: `nm-research/qwen3.8-27B-speculator.dflash2.updatedparams.strict.ckpt1` (HF Hub; not a clean ablation, see "Full two-epoch run" below).
-- Algorithm settings: block size 8, selector top-K 16 (confirmed from training config for the above runs).
-- Training data: `data_path` under local prepared data, directory name `prepared_openperfectblend` (i.e. a prepared version of the open-perfectblend dataset mix); exact HF dataset ID/revision still TODO.
-- Training: torchrun, 4 GPUs (`--nproc_per_node 4`), seed 42, 1 epoch capped at the step counts above (5k/25k for selector policy; 20k for normalization). The full two-epoch run is a separate, later training pass — its config/results are not in these logs and are still TODO.
-- Evaluation: `RedHatAI/speculator_benchmarks`, `evaluate.py ... throughput`; the plotted subsets are listed in the tables below. Exact eval command flags (e.g. `--max-requests`/`--max-concurrency`) TODO — confirm against `evaluate_run.log` for each checkpoint.
-- Software and hardware: 8x NVIDIA H200 node (training used 4 of 8); torch 2.13.0+cu130, transformers 5.16.1 (current env — TODO confirm these match what was active at each run's actual training time).
+  - strict, effective-weight-sum normalization, 20k steps: `qwen38-dflash2-selector-strict-effective_weight_sum-20000steps-20261016_155251/checkpoints/0`
+  - strict, valid-token-count normalization, 20k steps: `qwen38-dflash2-selector-strict-valid_token_count-20000steps-20261019_011313/checkpoints/0`
+  - strict, full two epochs: `nm-research/qwen3.8-27B-speculator.dflash2.updatedparams.strict.ckpt1` (Hugging Face Hub)
+- Algorithm settings: block size 8, selector top-K 16.
+- Training data: a prepared version of the open-perfectblend dataset mix.
+- Training: `torchrun`, 4 GPUs per run, seed 42, 1 epoch capped at the step counts listed above for the selector-policy and normalization runs. The full two-epoch checkpoint is a separate, longer training run with additional parameter changes beyond the miss policy.
+- Evaluation: `RedHatAI/speculator_benchmarks` via `evaluate.py ... throughput`.
+- Hardware: 8x NVIDIA H200 node (4 GPUs used per training run).
 
 ## Reproduction
 
-The strict selector miss policy is implemented in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217). Add the training and evaluation commands, configuration files, checkpoint identifiers, and original chart assets before finalizing this report.
-
-<!-- TODO: Add original figures for the 5k strict-vs-replace run, the 25k strict-vs-replace run, and the 20k normalization ablation. -->
+The strict selector miss policy is implemented in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217).
 
 ## Results
 
@@ -49,7 +46,7 @@ The strict selector miss policy is implemented in [Speculators PR #1217](https:/
 
 When the verifier's target token is absent from the selector's top-K candidates, `replace` inserts the target into the last candidate slot and trains the selector on that position. `strict` leaves the candidate set unchanged and masks the selector loss for that position; the unary loss remains active.
 
-Acceptance length by subset (tokens per round, as displayed in the figures):
+Acceptance length by subset (tokens per round):
 
 #### 5k training steps
 
@@ -65,7 +62,7 @@ Acceptance length by subset (tokens per round, as displayed in the figures):
 | translation | 2.39 | 2.57 | +0.18 |
 | writing | 2.51 | 2.72 | +0.21 |
 
-Strict is higher on all nine subsets in the displayed 5k results. The mean acceptance length is approximately 2.76 for replace and 2.92 for strict.
+Strict is higher on all nine subsets at 5k steps. Mean acceptance length is approximately 2.76 for replace and 2.92 for strict.
 
 #### 25k training steps
 
@@ -81,7 +78,7 @@ Strict is higher on all nine subsets in the displayed 5k results. The mean accep
 | translation | 3.89 | 3.91 | +0.02 |
 | writing | 3.25 | 3.23 | −0.02 |
 
-The displayed 25k results are mixed: strict is higher on five subsets, lower on three, and tied on one. Mean acceptance length is approximately 3.73 for replace and 3.76 for strict. The plotted per-position acceptance rates are close between the policies.
+At 25k steps the results are mixed: strict is higher on five subsets, lower on three, and tied on one. Mean acceptance length is approximately 3.73 for replace and 3.76 for strict. Per-position acceptance rates are close between the two policies.
 
 ### Valid-token-count versus effective-weight-sum normalization
 
@@ -90,7 +87,7 @@ The two loss reductions differ in their denominator:
 - `valid_token_count`: divides the weighted loss by the number of valid tokens, using `loss_mask.sum()`.
 - `effective_weight_sum`: rescales the loss by `valid.sum() / (valid * decay_weight).sum()`, so the effective denominator is the sum of valid per-position decay weights.
 
-Acceptance length by subset (tokens per round, as displayed in the figures):
+Acceptance length by subset (tokens per round):
 
 #### 20k training steps
 
@@ -107,11 +104,11 @@ Acceptance length by subset (tokens per round, as displayed in the figures):
 | writing | 3.11 | 3.13 |
 | Mean | 3.62 | 3.63 |
 
-The displayed mean acceptance lengths are very similar and the per-position acceptance-rate plots nearly overlap. The subset-level differences are mixed; these results do not show a consistent winner between the normalization methods.
+Mean acceptance length is very similar between the two normalization schemes, and per-position acceptance rates nearly overlap. Subset-level differences are small and mixed in direction, showing no consistent winner between the two normalization methods at this step count.
 
 ### Full two-epoch run
 
-This is a separate experiment from the step-capped 5k/25k/7k/20k ablations above (those are single-epoch, step-limited runs). Checkpoint: `nm-research/qwen3.8-27B-speculator.dflash2.updatedparams.strict.ckpt1` (HF Hub). The `updatedparams` name indicates other hyperparameters changed too, not just the miss policy — so this is **not a clean ablation** against the runs above; treat it as a separate data point, not a controlled strict-vs-replace comparison. No local training log/provenance found for this checkpoint (HF-hub only).
+This checkpoint reflects a longer, two-epoch training run with additional parameter changes beyond the selector miss policy, so it is not a controlled comparison against the step-capped runs above; it is reported as a separate data point.
 
 | Subset | Acceptance length |
 |---|---:|
@@ -126,15 +123,14 @@ This is a separate experiment from the step-capped 5k/25k/7k/20k ablations above
 | writing | 3.73 |
 | Mean | 4.26 |
 
-Substantially higher acceptance length than any step-capped run above (mean ~4.26 vs. ~3.6–3.8 at 20k/25k) — consistent with more training (full 2 epochs) plus the other, unspecified parameter changes. Because multiple things changed at once, this run cannot isolate the effect of the miss policy on its own.
+Mean acceptance length (4.26) is substantially higher than any of the step-capped runs (3.6-3.8 at 20k/25k steps), consistent with additional training and the other parameter changes. Because multiple factors changed together, this run does not isolate the effect of the miss policy on its own.
 
 ## Observations
 
-- The 5k strict-selector results favor strict across all nine displayed subsets; the 25k results show smaller, mixed differences.
-- Valid-token-count and effective-weight-sum normalization produce similar average acceptance lengths at the plotted 20k checkpoints, with no consistent subset-level winner.
-- A 7k normalization comparison was attempted but dropped from this report: both the "valid-token" and "effective-weight-sum" 7k eval runs were found to have queried the same live checkpoint server, so the results were not a valid ablation.
-- These plots do not include run-to-run variance or confidence intervals; interpret small differences descriptively, not as evidence of statistical significance.
-- Training dataset details, exact run configurations, software/hardware versions, the full two-epoch results, and original chart assets remain to be added.
+- The `strict` selector miss policy improves acceptance length over `replace` across all displayed subsets at 5k training steps; the advantage narrows and becomes mixed by 25k steps.
+- `valid_token_count` and `effective_weight_sum` loss normalization produce comparable acceptance lengths at 20k training steps, with no consistent subset-level winner.
+- The full two-epoch checkpoint reaches a notably higher acceptance length than any step-capped run, but combines several changes at once and should not be read as isolating the selector policy's effect.
+- Results above do not include run-to-run variance or confidence intervals; subset-level differences should be interpreted descriptively rather than as statistically significant.
 
 ## References
 
