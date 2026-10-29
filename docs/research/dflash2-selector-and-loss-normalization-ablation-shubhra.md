@@ -146,6 +146,10 @@ Strict is higher on every subset, a smaller but still consistent margin compared
 - In a final comparison matched on global training step and `max-anchors`, `strict` is higher than pre-strict on every subset, consistent with the 5k-step result.
 - Results above do not include run-to-run variance or confidence intervals; subset-level differences should be interpreted descriptively rather than as statistically significant.
 
+## Next steps
+
+We are training a new DFlash2 drafter that incorporates the `strict` selector miss policy along with further changes, aimed at producing a more usable drafter overall. Results from that effort will be reported separately.
+
 ## References
 
 - [DFlash2 strict selector miss policy, Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217)
