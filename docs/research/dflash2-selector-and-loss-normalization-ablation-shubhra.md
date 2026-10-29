@@ -18,7 +18,7 @@ tags:
 
 DFlash2's draft-model training had two open design questions worth investigating: how the selector should handle a missing gold token among its top-K candidates, and how the per-position selector loss should be normalized. This report covers ablations on both questions on Qwen3.8-27B, followed by a longer training run that incorporates the resulting change.
 
-For the selector miss policy, `strict` improves acceptance length over `replace` on every subset at 5k training steps, which motivated adding `strict` as a selectable policy in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217). At 25k steps the difference narrows and becomes mixed. For loss normalization, `valid_token_count` and `effective_weight_sum` produce comparable acceptance lengths at 20k training steps, with no consistent winner across subsets. A final comparison between a longer pre-strict checkpoint and its strict-policy counterpart shows `strict` ahead on every subset, by a wide margin.
+For the selector miss policy, `strict` improves acceptance length over `replace` on every subset at 5k training steps, which motivated adding `strict` as a selectable policy in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217). At 25k steps the difference narrows and becomes mixed. For loss normalization, `valid_token_count` and `effective_weight_sum` produce comparable acceptance lengths at 20k training steps, with no consistent winner across subsets. A final, step-matched comparison between a pre-strict checkpoint and its strict-policy counterpart shows `strict` ahead on every subset.
 
 ## Setup
 
@@ -31,11 +31,11 @@ For the selector miss policy, `strict` improves acceptance length over `replace`
   - strict, 25k steps: `qwen38-dflash2-selector-strict-25000steps-20261009_151402/checkpoints/0`
   - strict, effective-weight-sum normalization, 20k steps: `qwen38-dflash2-selector-strict-effective_weight_sum-20000steps-20261016_155251/checkpoints/0`
   - strict, valid-token-count normalization, 20k steps: `qwen38-dflash2-selector-strict-valid_token_count-20000steps-20261019_011313/checkpoints/0`
-  - final comparison, pre-strict: `nm-research/qwen3.8-27B-speculator.dflash2.updatedparams.epoch1_end` (Hugging Face Hub)
-  - final comparison, strict: `nm-research/qwen3.8-27B-speculator.dflash2.updatedparams.strict.ckpt1` (Hugging Face Hub)
+  - final comparison, pre-strict: `nm-research/qwen3.8-27B-speculator.dflash2.updatedparams.epoch1_end` (Hugging Face Hub; global step 143,291, `--max-anchors 1536`)
+  - final comparison, strict: `nm-research/qwen3.8-27B-speculator.dflash2.updatedparams.strict.ckpt0` (Hugging Face Hub; global step 143,349, `--max-anchors 1536`)
 - Algorithm settings: block size 8, selector top-K 16.
 - Training data: a prepared version of the open-perfectblend dataset mix.
-- Training: `torchrun`, 4 GPUs per run, seed 42, 1 epoch capped at the step counts above for the selector-policy and normalization ablations. The final-comparison checkpoints are from a separate, longer training recipe, run both without and with the strict policy; checkpoint naming indicates the other hyperparameters are shared between the two.
+- Training: `torchrun`, 4 GPUs per run, seed 42, 1 epoch capped at the step counts above for the selector-policy and normalization ablations. The final-comparison checkpoints are matched on global step and `max-anchors`, differing only in the `--selector-miss-policy` flag, confirmed from each checkpoint's `train_command.txt`.
 - Evaluation: `RedHatAI/speculator_benchmarks` via `evaluate.py ... throughput`.
 - Hardware: 8x NVIDIA H200 node (4 GPUs used per training run).
 
@@ -119,22 +119,22 @@ Mean acceptance length is very similar between the two normalization schemes, an
 
 ### Final comparison: pre-strict versus strict
 
-This is a longer-training follow-up to the step-capped ablation above, comparing a pre-strict checkpoint against its strict-policy counterpart from the same training recipe.
+This compares a pre-strict checkpoint against its strict-policy counterpart from the same longer training recipe, matched on global training step (143,291 vs. 143,349) and `max-anchors` (1536 for both); the two checkpoints differ only in the `--selector-miss-policy` flag.
 
 | Subset | Pre-strict | Strict | Strict − pre-strict |
 |---|---:|---:|---:|
-| HumanEval | 3.35 | 4.38 | +1.03 |
-| math_reasoning | 4.02 | 5.64 | +1.62 |
-| qa | 3.26 | 4.11 | +0.85 |
-| question | 2.92 | 3.77 | +0.85 |
-| rag | 3.80 | 4.65 | +0.85 |
-| summarization | 2.92 | 3.93 | +1.01 |
-| tool_call | 2.91 | 3.70 | +0.79 |
-| translation | 3.41 | 4.48 | +1.07 |
-| writing | 2.94 | 3.73 | +0.79 |
-| Mean | 3.28 | 4.27 | +0.99 |
+| HumanEval | 3.35 | 3.58 | +0.24 |
+| math_reasoning | 4.02 | 4.63 | +0.61 |
+| qa | 3.26 | 3.56 | +0.30 |
+| question | 2.92 | 3.10 | +0.18 |
+| rag | 3.80 | 4.11 | +0.31 |
+| summarization | 2.92 | 3.19 | +0.28 |
+| tool_call | 2.91 | 3.08 | +0.17 |
+| translation | 3.41 | 3.76 | +0.35 |
+| writing | 2.94 | 3.09 | +0.15 |
+| Mean | 3.28 | 3.57 | +0.29 |
 
-Strict is higher on every subset, with a larger and more consistent margin than the step-capped 5k/25k comparison above.
+Strict is higher on every subset, a smaller but still consistent margin compared to the step-capped 5k comparison above.
 
 ![DFlash2 final comparison, pre-strict vs strict](../assets/research/dflash2_final_prestrict_vs_strict.png)
 
@@ -143,7 +143,7 @@ Strict is higher on every subset, with a larger and more consistent margin than 
 - The `strict` selector miss policy improved acceptance length over `replace` on every subset at 5k training steps, motivating its addition as a selectable training option; at 25k training steps the difference narrows and becomes mixed.
 - `val/unary_candidate_recall_at_16_epoch` consistently favors `strict` over `replace` at both 5k and 25k training steps, even where downstream acceptance length does not.
 - `valid_token_count` and `effective_weight_sum` loss normalization produce comparable acceptance lengths at 20k training steps, with no consistent subset-level winner.
-- In a longer-training final comparison, `strict` is higher than pre-strict on every subset, by a wide and consistent margin.
+- In a final comparison matched on global training step and `max-anchors`, `strict` is higher than pre-strict on every subset, consistent with the 5k-step result.
 - Results above do not include run-to-run variance or confidence intervals; subset-level differences should be interpreted descriptively rather than as statistically significant.
 
 ## References
