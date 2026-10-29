@@ -62,6 +62,8 @@ An earlier, shorter run showed `strict` ahead of `replace` on every subset, prom
 
 At 25k steps the results are mixed: strict is higher on five subsets, lower on three, and tied on one. Mean acceptance length is approximately 3.73 for replace and 3.76 for strict. Per-position acceptance rates are close between the two policies.
 
+The training-time validation metric `val/unary_candidate_recall_at_16_epoch` (how often the gold token appears in the unary head's top-16 candidates) favors `strict` at both step counts: 0.687 → 0.713 at 5k, and 0.780 → 0.790 at 25k. This metric is more consistent than the downstream acceptance-length comparison above.
+
 ### Valid-token-count versus effective-weight-sum normalization
 
 The two loss reductions differ in their denominator:
@@ -110,6 +112,7 @@ Mean acceptance length (4.26) is substantially higher than any of the step-cappe
 ## Observations
 
 - The `strict` selector miss policy improved acceptance length over `replace` on every subset in an earlier, shorter run, motivating its addition as a selectable training option; at 25k training steps the difference narrows and becomes mixed.
+- `val/unary_candidate_recall_at_16_epoch` consistently favors `strict` over `replace` at both 5k and 25k training steps, even where downstream acceptance length does not.
 - `valid_token_count` and `effective_weight_sum` loss normalization produce comparable acceptance lengths at 20k training steps, with no consistent subset-level winner.
 - The full two-epoch checkpoint reaches a notably higher acceptance length than any step-capped run, but combines several changes at once and should not be read as isolating the selector policy's effect.
 - Results above do not include run-to-run variance or confidence intervals; subset-level differences should be interpreted descriptively rather than as statistically significant.
