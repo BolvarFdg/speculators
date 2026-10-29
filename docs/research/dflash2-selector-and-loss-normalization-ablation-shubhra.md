@@ -23,12 +23,17 @@ The results are descriptive comparisons of the shown checkpoints. The figures an
 ## Setup
 
 - Target model: `Qwen/Qwen3.8-27B`.
-- Draft model: DFlash2; exact checkpoint ID and revision to be added.
-- Algorithm settings: block size 8 and selector top-K 16, as stated on the 5k figure; confirm these settings for the other runs.
-- Training data: exact dataset mix and revision to be added.
-- Training: selector miss-policy comparisons at 5k and 25k steps; loss-normalization comparisons at 7k and 20k steps. The full two-epoch run's exact configuration and results are to be added.
-- Evaluation: `RedHatAI/speculator_benchmarks`; the plotted subsets are listed in the tables below. Exact evaluation command and serving settings to be added.
-- Software and hardware: to be added from run provenance.
+- Draft model: DFlash2, trained with [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217)'s `--selector-miss-policy` flag; checkpoints used for evaluation:
+  - replace, 5k steps: `qwen38-dflash2-selector-replace-5k-20261008_002640/checkpoints/0`
+  - strict, 5k steps: `qwen38-dflash2-selector-strict-5k-20261008_111207/checkpoints/0`
+  - replace, 25k steps: `qwen38-dflash2-selector-replace-25000steps-20261012_010849/checkpoints/0`
+  - strict, 25k steps: `qwen38-dflash2-selector-strict-25000steps-20261009_151402/checkpoints/0`
+  - 7k/20k normalization checkpoint IDs: TODO (need the run dirs for the valid-token-count vs. effective-weight-sum comparison).
+- Algorithm settings: block size 8, selector top-K 16 (confirmed from training config for the above runs).
+- Training data: `data_path` under local prepared data, directory name `prepared_openperfectblend` (i.e. a prepared version of the open-perfectblend dataset mix); exact HF dataset ID/revision still TODO.
+- Training: torchrun, 4 GPUs (`--nproc_per_node 4`), seed 42, 1 epoch capped at the step counts above (5k/25k for selector policy; 7k/20k for normalization). The full two-epoch run is a separate, later training pass — its config/results are not in these logs and are still TODO.
+- Evaluation: `RedHatAI/speculator_benchmarks`, `evaluate.py ... throughput`; the plotted subsets are listed in the tables below. Exact eval command flags (e.g. `--max-requests`/`--max-concurrency`) TODO — confirm against `evaluate_run.log` for each checkpoint.
+- Software and hardware: 8x NVIDIA H200 node (training used 4 of 8); torch 2.13.0+cu130, transformers 5.16.1 (current env — TODO confirm these match what was active at each run's actual training time).
 
 ## Reproduction
 
@@ -120,7 +125,7 @@ At both step counts, the displayed mean acceptance lengths are very similar and 
 
 ### Full two-epoch run
 
-Results and setup details for the full two-epoch run are to be added. Confirm whether this run corresponds to the 25k-step strict-versus-replace comparison or is a separate experiment.
+This is a separate experiment from the step-capped 5k/25k/7k/20k ablations above (those are single-epoch, step-limited runs). Results and setup details for the full two-epoch run are still TODO — need the run directory/logs to fill this in.
 
 ## Observations
 
