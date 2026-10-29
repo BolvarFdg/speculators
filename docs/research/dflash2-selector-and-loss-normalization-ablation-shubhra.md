@@ -23,14 +23,14 @@ For the selector miss policy, `strict` improves acceptance length over `replace`
 ## Setup
 
 - Target model: `Qwen/Qwen3.8-27B`.
-- Draft model: DFlash2, trained with the `--selector-miss-policy` flag introduced in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217).
-- Selector-policy ablation: `replace` vs. `strict`, each trained to 5k and 25k steps.
-- Normalization ablation: `valid_token_count` vs. `effective_weight_sum`, each trained to 20k steps with the `strict` policy.
-- Final comparison: pre-strict vs. `strict`, matched on global training step (~143k) and `max-anchors` (1536), differing only in the `--selector-miss-policy` flag.
+- Draft model: DFlash2. DFlash2 drafts tokens with a selector head, which picks candidates from a top-K shortlist, and a unary head; `--selector-miss-policy` (introduced in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217)) controls what happens when the verifier's actual next token isn't in that shortlist during training.
+- Selector-policy ablation: `replace` vs. `strict`, each trained to 5k and 25k steps, from the same base training recipe.
+- Normalization ablation: `valid_token_count` vs. `effective_weight_sum`, each trained to 20k steps with the `strict` policy, from the same base recipe as the selector-policy ablation above.
+- Final comparison: pre-strict vs. `strict`, from a separate, later training recipe (different `max-anchors` setting than the ablations above), matched to each other on global training step (~143k) and `max-anchors` (1536), differing only in the `--selector-miss-policy` flag. Because this recipe differs from the one used in the ablations above, its absolute acceptance-length values are not directly comparable to the 5k/25k/20k results; only the within-pair deltas are.
 - Algorithm settings: block size 8, selector top-K 16.
 - Training data: a prepared version of the open-perfectblend dataset mix.
-- Training: `torchrun`, 4 GPUs per run, seed 42, 1 epoch (step-capped as noted above for the selector-policy and normalization ablations).
-- Evaluation: `RedHatAI/speculator_benchmarks` via `evaluate.py ... throughput`.
+- Training: `torchrun`, 4 GPUs per run, seed 42, 1 epoch (step-capped as noted above for the selector-policy and normalization ablations). Global training step and `max-anchors` (max number of draft positions sampled per training step) are reported where used to match checkpoints across a policy comparison.
+- Evaluation: `RedHatAI/speculator_benchmarks` via `evaluate.py ... throughput`. Acceptance length is the mean number of tokens emitted per verification round, including the verifier's own always-emitted token (`1 + accepted draft tokens / drafts`).
 - Hardware: 8x NVIDIA H200 node (4 GPUs used per training run).
 
 ## Reproduction
@@ -113,7 +113,7 @@ Mean acceptance length is very similar between the two normalization schemes, an
 
 ### Final comparison: pre-strict versus strict
 
-This compares a pre-strict checkpoint against its strict-policy counterpart from the same longer training recipe, matched on global training step (143,291 vs. 143,349) and `max-anchors` (1536 for both); the two checkpoints differ only in the `--selector-miss-policy` flag.
+This compares a pre-strict checkpoint against its strict-policy counterpart from a separate, later training recipe (different from the one used for the 5k/25k/20k ablations above), matched on global training step (143,291 vs. 143,349) and `max-anchors` (1536 for both); the two checkpoints differ only in the `--selector-miss-policy` flag. Because the base recipe differs, the absolute acceptance lengths below are lower than the 25k ablation results above despite the much higher step count — compare only within this pair, not across sections.
 
 | Subset | Pre-strict | Strict | Strict − pre-strict |
 |---|---:|---:|---:|
