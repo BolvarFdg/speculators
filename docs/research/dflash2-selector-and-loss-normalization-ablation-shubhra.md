@@ -83,9 +83,9 @@ Strict is higher on all nine subsets at 5k steps, which prompted adding `strict`
 | translation | 3.89 | 3.91 | +0.02 |
 | writing | 3.25 | 3.23 | −0.02 |
 
-At 25k steps the results are mixed: strict is higher on five subsets, lower on three, and tied on one. Mean acceptance length is approximately 3.73 for replace and 3.76 for strict. Per-position acceptance rates are close between the two policies (no per-position chart is included for this comparison; the underlying per-position data did not survive on the training host).
+At 25k steps the results are mixed: strict is higher on five subsets, lower on three, and tied on one. Mean acceptance length is approximately 3.73 for replace and 3.76 for strict. Per-position acceptance rates are nearly identical between the two policies.
 
-![DFlash2 selector miss policy, replace vs strict, 25k training steps: acceptance length by subset](../assets/research/dflash2_selector_25k.png)
+![DFlash2 selector miss policy, replace vs strict, 25k training steps: acceptance length by subset and per-position acceptance rate](../assets/research/dflash2_selector_25k.png)
 
 The training-time validation metric `val/unary_candidate_recall_at_16_epoch` (how often the gold token appears in the unary head's top-16 candidates) favors `strict` at both step counts: 0.687 → 0.713 at 5k, and 0.780 → 0.790 at 25k. This metric is more consistent than the downstream acceptance-length comparison above.
 
