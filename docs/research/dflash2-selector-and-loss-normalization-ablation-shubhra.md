@@ -16,9 +16,9 @@ tags:
 
 ## Summary
 
-DFlash2's draft-model training had two open design questions worth investigating: how the selector should handle a missing gold token among its top-K candidates, and how the per-position selector loss should be normalized. This report covers ablations on both questions on Qwen3.8-27B, followed by a longer training run that incorporates the resulting change.
+DFlash2's draft-model training had two open design questions worth investigating: how the selector should handle a missing gold token among its top-K candidates, and how the per-position selector loss should be normalized. This report covers ablations on both questions on Qwen3.8-27B.
 
-For the selector miss policy, `strict` improves acceptance length over `replace` on every subset at 5k training steps, which motivated adding `strict` as a selectable policy in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217). At 25k steps the difference narrows and becomes mixed. For loss normalization, `valid_token_count` and `effective_weight_sum` produce comparable acceptance lengths at 20k training steps, with no consistent winner across subsets. A final, step-matched comparison between a pre-strict checkpoint and its strict-policy counterpart shows `strict` ahead on every subset.
+For the selector miss policy, `strict` improves acceptance length over `replace` on every subset at 5k training steps, which motivated adding `strict` as a selectable policy in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217). At 25k steps the difference narrows and becomes mixed. For loss normalization, `valid_token_count` and `effective_weight_sum` produce comparable acceptance lengths at 20k training steps, with no consistent winner across subsets.
 
 ## Setup
 
@@ -26,10 +26,9 @@ For the selector miss policy, `strict` improves acceptance length over `replace`
 - Draft model: DFlash2. DFlash2 drafts tokens with a selector head, which picks candidates from a top-K shortlist, and a unary head; `--selector-miss-policy` (introduced in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217)) controls what happens when the verifier's actual next token isn't in that shortlist during training.
 - Selector-policy ablation: `replace` vs. `strict`, each trained to 5k and 25k steps, from the same base training recipe.
 - Normalization ablation: `valid_token_count` vs. `effective_weight_sum`, each trained to 20k steps with the `strict` policy, from the same base recipe as the selector-policy ablation above.
-- Final comparison: pre-strict vs. `strict`, from a separate, later training recipe (different `max-anchors` setting than the ablations above), each trained for 1 full epoch over the open-perfectblend data with matching `max-anchors` (1536), differing only in the `--selector-miss-policy` flag. Because this recipe differs from the one used in the ablations above, its absolute acceptance-length values are not directly comparable to the 5k/25k/20k results; only the within-pair deltas are.
 - Algorithm settings: block size 8, selector top-K 16.
 - Training data: a prepared version of the open-perfectblend dataset mix.
-- Training: `torchrun`, 4 GPUs per run, seed 42, 1 epoch (step-capped as noted above for the selector-policy and normalization ablations). `max-anchors` (max number of draft positions sampled per training step) is reported where used to match checkpoints across a policy comparison.
+- Training: `torchrun`, 4 GPUs per run, seed 42, 1 epoch (step-capped as noted above for the selector-policy and normalization ablations).
 - Evaluation: `RedHatAI/speculator_benchmarks` via `evaluate.py ... throughput`. Acceptance length is the mean number of tokens emitted per verification round, including the verifier's own always-emitted token (`1 + accepted draft tokens / drafts`).
 - Hardware: 8x NVIDIA H200 node (4 GPUs used per training run).
 
@@ -111,38 +110,16 @@ Mean acceptance length is very similar between the two normalization schemes, an
 
 ![DFlash2 loss normalization, valid-token-count vs effective-weight-sum, 20k training steps: acceptance length by subset and per-position acceptance rate](../assets/research/dflash2_normalization_20k.png)
 
-### Final comparison: pre-strict versus strict
-
-This compares a pre-strict checkpoint against its strict-policy counterpart from a separate, later training recipe (different from the one used for the 5k/25k/20k ablations above); both were trained for 1 full epoch over open-perfectblend with matching `max-anchors` (1536), and differ only in the `--selector-miss-policy` flag. Because the base recipe differs, the absolute acceptance lengths below are lower than the 25k ablation results above despite the much longer training run — compare only within this pair, not across sections.
-
-| Subset | Pre-strict | Strict | Strict − pre-strict |
-|---|---:|---:|---:|
-| HumanEval | 3.35 | 3.58 | +0.24 |
-| math_reasoning | 4.02 | 4.63 | +0.61 |
-| qa | 3.26 | 3.56 | +0.30 |
-| question | 2.92 | 3.10 | +0.18 |
-| rag | 3.80 | 4.11 | +0.31 |
-| summarization | 2.92 | 3.19 | +0.28 |
-| tool_call | 2.91 | 3.08 | +0.17 |
-| translation | 3.41 | 3.76 | +0.35 |
-| writing | 2.94 | 3.09 | +0.15 |
-| Mean | 3.28 | 3.57 | +0.29 |
-
-Strict is higher on every subset, a smaller but still consistent margin compared to the step-capped 5k comparison above.
-
-![DFlash2 final comparison, pre-strict vs strict: acceptance length by subset and per-position acceptance rate](../assets/research/dflash2_final_prestrict_vs_strict.png)
-
 ## Observations
 
 - The `strict` selector miss policy improved acceptance length over `replace` on every subset at 5k training steps, motivating its addition as a selectable training option; at 25k training steps the difference narrows and becomes mixed.
 - `val/unary_candidate_recall_at_16_epoch` consistently favors `strict` over `replace` at both 5k and 25k training steps, even where downstream acceptance length does not.
 - `valid_token_count` and `effective_weight_sum` loss normalization produce comparable acceptance lengths at 20k training steps, with no consistent subset-level winner.
-- In a final comparison trained for 1 epoch over open-perfectblend with matching `max-anchors`, `strict` is higher than pre-strict on every subset, consistent with the 5k-step result.
 - Results above do not include run-to-run variance or confidence intervals; subset-level differences should be interpreted descriptively rather than as statistically significant.
 
 ## Next steps
 
-We are training a new DFlash2 drafter that incorporates the `strict` selector miss policy along with further changes, aimed at producing a more usable drafter overall. Results from that effort will be reported separately.
+These ablations led to landing the `strict` selector miss policy in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217). We are now training a new DFlash2 drafter that incorporates `strict` along with further changes, aimed at producing a more usable drafter overall. Results from that effort will be reported separately.
 
 ## References
 
