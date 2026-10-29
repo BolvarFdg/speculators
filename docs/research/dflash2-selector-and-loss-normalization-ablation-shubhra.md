@@ -24,18 +24,12 @@ For the selector miss policy, `strict` improves acceptance length over `replace`
 
 - Target model: `Qwen/Qwen3.8-27B`.
 - Draft model: DFlash2, trained with the `--selector-miss-policy` flag introduced in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217).
-- Checkpoints evaluated:
-  - replace, 5k steps: `qwen38-dflash2-selector-replace-5k-20261008_002640/checkpoints/0`
-  - strict, 5k steps: `qwen38-dflash2-selector-strict-5k-20261008_111207/checkpoints/0`
-  - replace, 25k steps: `qwen38-dflash2-selector-replace-25000steps-20261012_010849/checkpoints/0`
-  - strict, 25k steps: `qwen38-dflash2-selector-strict-25000steps-20261009_151402/checkpoints/0`
-  - strict, effective-weight-sum normalization, 20k steps: `qwen38-dflash2-selector-strict-effective_weight_sum-20000steps-20261016_155251/checkpoints/0`
-  - strict, valid-token-count normalization, 20k steps: `qwen38-dflash2-selector-strict-valid_token_count-20000steps-20261019_011313/checkpoints/0`
-  - final comparison, pre-strict: `nm-research/qwen3.8-27B-speculator.dflash2.updatedparams.epoch1_end` (Hugging Face Hub; global step 143,291, `--max-anchors 1536`)
-  - final comparison, strict: `nm-research/qwen3.8-27B-speculator.dflash2.updatedparams.strict.ckpt0` (Hugging Face Hub; global step 143,349, `--max-anchors 1536`)
+- Selector-policy ablation: `replace` vs. `strict`, each trained to 5k and 25k steps.
+- Normalization ablation: `valid_token_count` vs. `effective_weight_sum`, each trained to 20k steps with the `strict` policy.
+- Final comparison: pre-strict vs. `strict`, matched on global training step (~143k) and `max-anchors` (1536), differing only in the `--selector-miss-policy` flag.
 - Algorithm settings: block size 8, selector top-K 16.
 - Training data: a prepared version of the open-perfectblend dataset mix.
-- Training: `torchrun`, 4 GPUs per run, seed 42, 1 epoch capped at the step counts above for the selector-policy and normalization ablations. The final-comparison checkpoints are matched on global step and `max-anchors`, differing only in the `--selector-miss-policy` flag, confirmed from each checkpoint's `train_command.txt`.
+- Training: `torchrun`, 4 GPUs per run, seed 42, 1 epoch (step-capped as noted above for the selector-policy and normalization ablations).
 - Evaluation: `RedHatAI/speculator_benchmarks` via `evaluate.py ... throughput`.
 - Hardware: 8x NVIDIA H200 node (4 GPUs used per training run).
 
