@@ -16,7 +16,7 @@ tags:
 
 ## Summary
 
-This report compares the DFlash2 selector's `replace` and `strict` gold-miss policies at 5k and 25k training steps, and compares valid-token-count with effective-weight-sum loss normalization at 7k and 20k steps. The 5k strict-selector run improves acceptance length on all nine displayed subsets. At 25k, differences are smaller and mixed. The normalization runs are also close, with no consistent winner in the displayed results.
+This report compares the DFlash2 selector's `replace` and `strict` gold-miss policies at 5k and 25k training steps, and compares valid-token-count with effective-weight-sum loss normalization at 20k steps. The 5k strict-selector run improves acceptance length on all nine displayed subsets. At 25k, differences are smaller and mixed. The normalization comparison is also close, with no consistent winner in the displayed results.
 
 The results are descriptive comparisons of the shown checkpoints. The figures and complete run provenance will be added before this entry is finalized.
 
@@ -30,11 +30,10 @@ The results are descriptive comparisons of the shown checkpoints. The figures an
   - strict, 25k steps: `qwen38-dflash2-selector-strict-25000steps-20261009_151402/checkpoints/0`
   - 20k effective-weight-sum: `qwen38-dflash2-selector-strict-effective_weight_sum-20000steps-20261016_155251/checkpoints/0`
   - 20k valid-token-count: `qwen38-dflash2-selector-strict-valid_token_count-20000steps-20261019_011313/checkpoints/0`
-  - 7k: checkpoint IDs unreliable — see data-integrity note under "7k training steps" below; both eval dirs point at `...-7000steps-20261015_234038_effective_weight_sum/checkpoints/0`.
   - full two-epoch: `nm-research/qwen3.8-27B-speculator.dflash2.updatedparams.strict.ckpt1` (HF Hub; not a clean ablation, see "Full two-epoch run" below).
 - Algorithm settings: block size 8, selector top-K 16 (confirmed from training config for the above runs).
 - Training data: `data_path` under local prepared data, directory name `prepared_openperfectblend` (i.e. a prepared version of the open-perfectblend dataset mix); exact HF dataset ID/revision still TODO.
-- Training: torchrun, 4 GPUs (`--nproc_per_node 4`), seed 42, 1 epoch capped at the step counts above (5k/25k for selector policy; 7k/20k for normalization). The full two-epoch run is a separate, later training pass — its config/results are not in these logs and are still TODO.
+- Training: torchrun, 4 GPUs (`--nproc_per_node 4`), seed 42, 1 epoch capped at the step counts above (5k/25k for selector policy; 20k for normalization). The full two-epoch run is a separate, later training pass — its config/results are not in these logs and are still TODO.
 - Evaluation: `RedHatAI/speculator_benchmarks`, `evaluate.py ... throughput`; the plotted subsets are listed in the tables below. Exact eval command flags (e.g. `--max-requests`/`--max-concurrency`) TODO — confirm against `evaluate_run.log` for each checkpoint.
 - Software and hardware: 8x NVIDIA H200 node (training used 4 of 8); torch 2.13.0+cu130, transformers 5.16.1 (current env — TODO confirm these match what was active at each run's actual training time).
 
@@ -42,7 +41,7 @@ The results are descriptive comparisons of the shown checkpoints. The figures an
 
 The strict selector miss policy is implemented in [Speculators PR #1217](https://github.com/vllm-project/speculators/pull/1217). Add the training and evaluation commands, configuration files, checkpoint identifiers, and original chart assets before finalizing this report.
 
-<!-- TODO: Add original figures for the 5k strict-vs-replace run, the 25k strict-vs-replace run, and the 7k/20k normalization ablations. -->
+<!-- TODO: Add original figures for the 5k strict-vs-replace run, the 25k strict-vs-replace run, and the 20k normalization ablation. -->
 
 ## Results
 
@@ -93,24 +92,6 @@ The two loss reductions differ in their denominator:
 
 Acceptance length by subset (tokens per round, as displayed in the figures):
 
-#### 7k training steps
-
-**Data-integrity issue — not fixed yet.** Checked `evaluate_run.log` for both the `7k_valid_token` and `7k_effective_weight` eval dirs: every `'model':` entry in *both* logs points to the same checkpoint, `qwen38-dflash2-selector-strict-7000steps-20261015_234038_effective_weight_sum/checkpoints/0`. No `valid_token_count`-suffixed 7k checkpoint exists on disk (only an unsuffixed `...-7000steps-20261013_213253`, two days earlier, of unknown normalization setting). So the "valid-token" 7k numbers below are very likely the effective-weight-sum checkpoint evaluated twice (with ordinary request-sampling noise between runs, not a true normalization difference) — the close-but-not-identical numbers are consistent with that, not with a real ablation. **Do not treat this 7k comparison as evidence** until re-run against a confirmed valid-token-count 7k checkpoint. Keeping the numbers below for the record, with this caveat, pending a fresh run.
-
-The valid-token run is also missing the writing subset; the comparison below uses the eight common subsets.
-
-| Subset | Valid-token count | Effective-weight sum |
-|---|---:|---:|
-| HumanEval | 3.24 | 3.25 |
-| math_reasoning | 3.84 | 4.01 |
-| qa | 3.02 | 3.06 |
-| question | 2.71 | 2.80 |
-| rag | 3.21 | 3.02 |
-| summarization | 2.65 | 2.78 |
-| tool_call | 2.74 | 2.74 |
-| translation | 2.75 | 2.68 |
-| Mean of common subsets | 3.02 | 3.04 |
-
 #### 20k training steps
 
 | Subset | Valid-token count | Effective-weight sum |
@@ -126,7 +107,7 @@ The valid-token run is also missing the writing subset; the comparison below use
 | writing | 3.11 | 3.13 |
 | Mean | 3.62 | 3.63 |
 
-At both step counts, the displayed mean acceptance lengths are very similar and the per-position acceptance-rate plots nearly overlap. The subset-level differences are mixed; these results do not show a consistent winner between the normalization methods.
+The displayed mean acceptance lengths are very similar and the per-position acceptance-rate plots nearly overlap. The subset-level differences are mixed; these results do not show a consistent winner between the normalization methods.
 
 ### Full two-epoch run
 
@@ -150,8 +131,8 @@ Substantially higher acceptance length than any step-capped run above (mean ~4.2
 ## Observations
 
 - The 5k strict-selector results favor strict across all nine displayed subsets; the 25k results show smaller, mixed differences.
-- Valid-token-count and effective-weight-sum normalization produce similar average acceptance lengths at the plotted 7k and 20k checkpoints, with no consistent subset-level winner.
-- The 7k normalization comparison excludes writing because that valid-token run is missing.
+- Valid-token-count and effective-weight-sum normalization produce similar average acceptance lengths at the plotted 20k checkpoints, with no consistent subset-level winner.
+- A 7k normalization comparison was attempted but dropped from this report: both the "valid-token" and "effective-weight-sum" 7k eval runs were found to have queried the same live checkpoint server, so the results were not a valid ablation.
 - These plots do not include run-to-run variance or confidence intervals; interpret small differences descriptively, not as evidence of statistical significance.
 - Training dataset details, exact run configurations, software/hardware versions, the full two-epoch results, and original chart assets remain to be added.
 
