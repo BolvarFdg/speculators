@@ -39,13 +39,13 @@ The strict selector miss policy is implemented in [Speculators PR #1217](https:/
 
 ## Results
 
-### Per-position loss weight: dpace versus not dpace
+### Per-position loss weight: dpace versus fixed-exp-decay
 
-`dpace` is a per-position loss weighting scheme for the draft-model training loss; the alternative leaves per-position weights uniform. This ablation was run for both DFlash2 and DSpark, at 5k and 25k training steps each. Absolute acceptance length is lower at 5k than at 25k across all four configurations below, consistent with less training; compare `dpace` against not-`dpace` within each step count instead of across them.
+`dpace` is a confidence-based per-position loss weight: it converts the per-position cross-entropy loss to a confidence score, smooths it with a constant `dpace_alpha` (default 0.5), and combines positions within a block via a cumulative-product/suffix-sum to produce the final per-position weight. The alternative, `fixed-exp-decay`, weights positions by a fixed exponential decay independent of model confidence; it is DFlash2's and DSpark's default. This ablation was run for both DFlash2 and DSpark, at 5k and 25k training steps each. Absolute acceptance length is lower at 5k than at 25k across all four configurations below, consistent with less training; compare `dpace` against `fixed-exp-decay` within each step count instead of across them.
 
 #### 25k training steps, DFlash2
 
-| Subset | dpace | not dpace | dpace − not dpace |
+| Subset | dpace | fixed-exp-decay | dpace − fixed-exp-decay |
 |---|---:|---:|---:|
 | HumanEval | 3.32 | 3.27 | +0.05 |
 | math_reasoning | 4.05 | 4.00 | +0.05 |
@@ -57,13 +57,13 @@ The strict selector miss policy is implemented in [Speculators PR #1217](https:/
 | translation | 3.36 | 3.32 | +0.04 |
 | writing | 2.84 | 2.88 | −0.05 |
 
-Mixed: `dpace` is higher on six subsets, lower on three. Mean acceptance length is approximately 3.26 for `dpace` and 3.24 for not-`dpace`.
+Mixed: `dpace` is higher on six subsets, lower on three. Mean acceptance length is approximately 3.26 for `dpace` and 3.24 for `fixed-exp-decay`.
 
-![DFlash2 per-position loss weight, dpace vs not dpace, 25k training steps: acceptance length by subset and per-position acceptance rate](../assets/research/dflash2_dpace_25k_dflash2.png)
+![DFlash2 per-position loss weight, dpace vs fixed-exp-decay, 25k training steps: acceptance length by subset and per-position acceptance rate](../assets/research/dflash2_dpace_25k_dflash2.png)
 
 #### 25k training steps, DSpark
 
-| Subset | dpace | not dpace | dpace − not dpace |
+| Subset | dpace | fixed-exp-decay | dpace − fixed-exp-decay |
 |---|---:|---:|---:|
 | HumanEval | 3.28 | 3.44 | −0.17 |
 | math_reasoning | 4.13 | 4.25 | −0.13 |
@@ -75,13 +75,13 @@ Mixed: `dpace` is higher on six subsets, lower on three. Mean acceptance length 
 | translation | 3.35 | 3.42 | −0.06 |
 | writing | 2.93 | 2.98 | −0.05 |
 
-Not-`dpace` is higher on all nine subsets for DSpark at 25k steps. Mean acceptance length is approximately 3.29 for `dpace` and 3.39 for not-`dpace`.
+`fixed-exp-decay` is higher on all nine subsets for DSpark at 25k steps. Mean acceptance length is approximately 3.29 for `dpace` and 3.39 for `fixed-exp-decay`.
 
-![DSpark per-position loss weight, dpace vs not dpace, 25k training steps: acceptance length by subset and per-position acceptance rate](../assets/research/dflash2_dpace_25k_dspark.png)
+![DSpark per-position loss weight, dpace vs fixed-exp-decay, 25k training steps: acceptance length by subset and per-position acceptance rate](../assets/research/dflash2_dpace_25k_dspark.png)
 
 #### 5k training steps, DFlash2
 
-| Subset | dpace | not dpace | dpace − not dpace |
+| Subset | dpace | fixed-exp-decay | dpace − fixed-exp-decay |
 |---|---:|---:|---:|
 | HumanEval | 3.02 | 2.97 | +0.05 |
 | math_reasoning | 3.83 | 3.66 | +0.17 |
@@ -93,13 +93,13 @@ Not-`dpace` is higher on all nine subsets for DSpark at 25k steps. Mean acceptan
 | translation | 3.05 | 2.91 | +0.14 |
 | writing | 2.67 | 2.58 | +0.09 |
 
-`dpace` is higher on eight of nine subsets for DFlash2 at 5k steps. Mean acceptance length is approximately 3.00 for `dpace` and 2.94 for not-`dpace`.
+`dpace` is higher on eight of nine subsets for DFlash2 at 5k steps. Mean acceptance length is approximately 3.00 for `dpace` and 2.94 for `fixed-exp-decay`.
 
-![DFlash2 per-position loss weight, dpace vs not dpace, 5k training steps: acceptance length by subset and per-position acceptance rate](../assets/research/dflash2_dpace_5k_dflash2.png)
+![DFlash2 per-position loss weight, dpace vs fixed-exp-decay, 5k training steps: acceptance length by subset and per-position acceptance rate](../assets/research/dflash2_dpace_5k_dflash2.png)
 
 #### 5k training steps, DSpark
 
-| Subset | dpace | not dpace | dpace − not dpace |
+| Subset | dpace | fixed-exp-decay | dpace − fixed-exp-decay |
 |---|---:|---:|---:|
 | HumanEval | 3.05 | 3.12 | −0.07 |
 | math_reasoning | 3.79 | 3.80 | −0.00 |
@@ -111,11 +111,11 @@ Not-`dpace` is higher on all nine subsets for DSpark at 25k steps. Mean acceptan
 | translation | 2.84 | 2.88 | −0.04 |
 | writing | 2.65 | 2.72 | −0.06 |
 
-Not-`dpace` is higher on seven of nine subsets for DSpark at 5k steps. Mean acceptance length is approximately 2.94 for `dpace` and 3.00 for not-`dpace`.
+`fixed-exp-decay` is higher on seven of nine subsets for DSpark at 5k steps. Mean acceptance length is approximately 2.94 for `dpace` and 3.00 for `fixed-exp-decay`.
 
-![DSpark per-position loss weight, dpace vs not dpace, 5k training steps: acceptance length by subset and per-position acceptance rate](../assets/research/dflash2_dpace_5k_dspark.png)
+![DSpark per-position loss weight, dpace vs fixed-exp-decay, 5k training steps: acceptance length by subset and per-position acceptance rate](../assets/research/dflash2_dpace_5k_dspark.png)
 
-Across both step counts, `dpace` is at best mixed for DFlash2 and consistently worse than not-`dpace` for DSpark; this is why `dpace` was kept as the default for DFlash2 but not adopted for DSpark.
+Across both step counts, `dpace` is at best mixed for DFlash2 and consistently worse than `fixed-exp-decay` for DSpark. `fixed-exp-decay` remains the default per-position loss weight for both architectures; these ablations did not surface a clear case for switching DFlash2 to `dpace`.
 
 ### Strict versus replace selector policy
 
