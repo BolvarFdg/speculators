@@ -28,7 +28,10 @@ The results are descriptive comparisons of the shown checkpoints. The figures an
   - strict, 5k steps: `qwen38-dflash2-selector-strict-5k-20261008_111207/checkpoints/0`
   - replace, 25k steps: `qwen38-dflash2-selector-replace-25000steps-20261012_010849/checkpoints/0`
   - strict, 25k steps: `qwen38-dflash2-selector-strict-25000steps-20261009_151402/checkpoints/0`
-  - 7k/20k normalization checkpoint IDs: TODO (need the run dirs for the valid-token-count vs. effective-weight-sum comparison).
+  - 20k effective-weight-sum: `qwen38-dflash2-selector-strict-effective_weight_sum-20000steps-20261016_155251/checkpoints/0`
+  - 20k valid-token-count: `qwen38-dflash2-selector-strict-valid_token_count-20000steps-20261019_011313/checkpoints/0`
+  - 7k: checkpoint IDs unreliable — see data-integrity note under "7k training steps" below; both eval dirs point at `...-7000steps-20261015_234038_effective_weight_sum/checkpoints/0`.
+  - full two-epoch: `nm-research/qwen3.8-27B-speculator.dflash2.updatedparams.strict.ckpt1` (HF Hub; not a clean ablation, see "Full two-epoch run" below).
 - Algorithm settings: block size 8, selector top-K 16 (confirmed from training config for the above runs).
 - Training data: `data_path` under local prepared data, directory name `prepared_openperfectblend` (i.e. a prepared version of the open-perfectblend dataset mix); exact HF dataset ID/revision still TODO.
 - Training: torchrun, 4 GPUs (`--nproc_per_node 4`), seed 42, 1 epoch capped at the step counts above (5k/25k for selector policy; 7k/20k for normalization). The full two-epoch run is a separate, later training pass — its config/results are not in these logs and are still TODO.
@@ -92,7 +95,9 @@ Acceptance length by subset (tokens per round, as displayed in the figures):
 
 #### 7k training steps
 
-The valid-token run is missing the writing subset; the comparison below uses the eight common subsets.
+**Data-integrity issue — not fixed yet.** Checked `evaluate_run.log` for both the `7k_valid_token` and `7k_effective_weight` eval dirs: every `'model':` entry in *both* logs points to the same checkpoint, `qwen38-dflash2-selector-strict-7000steps-20261015_234038_effective_weight_sum/checkpoints/0`. No `valid_token_count`-suffixed 7k checkpoint exists on disk (only an unsuffixed `...-7000steps-20261013_213253`, two days earlier, of unknown normalization setting). So the "valid-token" 7k numbers below are very likely the effective-weight-sum checkpoint evaluated twice (with ordinary request-sampling noise between runs, not a true normalization difference) — the close-but-not-identical numbers are consistent with that, not with a real ablation. **Do not treat this 7k comparison as evidence** until re-run against a confirmed valid-token-count 7k checkpoint. Keeping the numbers below for the record, with this caveat, pending a fresh run.
+
+The valid-token run is also missing the writing subset; the comparison below uses the eight common subsets.
 
 | Subset | Valid-token count | Effective-weight sum |
 |---|---:|---:|
@@ -125,7 +130,22 @@ At both step counts, the displayed mean acceptance lengths are very similar and 
 
 ### Full two-epoch run
 
-This is a separate experiment from the step-capped 5k/25k/7k/20k ablations above (those are single-epoch, step-limited runs). Results and setup details for the full two-epoch run are still TODO — need the run directory/logs to fill this in.
+This is a separate experiment from the step-capped 5k/25k/7k/20k ablations above (those are single-epoch, step-limited runs). Checkpoint: `nm-research/qwen3.8-27B-speculator.dflash2.updatedparams.strict.ckpt1` (HF Hub). The `updatedparams` name indicates other hyperparameters changed too, not just the miss policy — so this is **not a clean ablation** against the runs above; treat it as a separate data point, not a controlled strict-vs-replace comparison. No local training log/provenance found for this checkpoint (HF-hub only).
+
+| Subset | Acceptance length |
+|---|---:|
+| HumanEval | 4.38 |
+| math_reasoning | 5.64 |
+| qa | 4.11 |
+| question | 3.77 |
+| rag | 4.65 |
+| summarization | 3.93 |
+| tool_call | 3.70 |
+| translation | 4.48 |
+| writing | 3.73 |
+| Mean | 4.26 |
+
+Substantially higher acceptance length than any step-capped run above (mean ~4.26 vs. ~3.6–3.8 at 20k/25k) — consistent with more training (full 2 epochs) plus the other, unspecified parameter changes. Because multiple things changed at once, this run cannot isolate the effect of the miss policy on its own.
 
 ## Observations
 
