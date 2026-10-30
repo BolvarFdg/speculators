@@ -24,6 +24,7 @@ from speculators.models.eagle3.rotary_partial import install_partial_neox_rotary
 from speculators.models.mtp.data import shift_batch_mtp
 from speculators.models.utils import (
     get_verifier_config,
+    is_qwen3_omni_verifier,
     resolve_draft_intermediate_size,
 )
 from speculators.train.config import TrainConfig
@@ -152,6 +153,11 @@ def create_transformer_layer_config(  # noqa: C901
     # For multimodal models (Qwen3VL, etc.), extract text_config
     if hasattr(verifier_config, "text_config"):
         verifier_config = verifier_config.text_config
+    elif hasattr(verifier_config, "thinker_config") and hasattr(
+        verifier_config.thinker_config, "text_config"
+    ):
+        # Qwen3-Omni: draft against the thinker's text model.
+        verifier_config = verifier_config.thinker_config.text_config
 
     if getattr(verifier_config, "is_heterogeneous", False) and hasattr(
         verifier_config, "allow_global_per_layer_attribute_access"
@@ -231,6 +237,13 @@ def create_transformer_layer_config(  # noqa: C901
         layer_types=layer_types,
     )
 
+    # The Qwen3-Omni DSpark contract in vLLM requires the draft to use logical
+    # 1-D RoPE (_validate_qwen3_omni_dspark rejects mrope_section): the draft
+    # trains on logical positions and the speculator feeds it 1-D positions.
+    is_omni = is_qwen3_omni_verifier(
+        verifier_name_or_path, trust_remote_code=trust_remote_code
+    )
+
     # New rope parameters definition introduced in transformers 5.0
     if version.parse(transformers.__version__) >= version.parse("5.0.0"):
         if hasattr(verifier_config, "rope_parameters"):
@@ -253,6 +266,11 @@ def create_transformer_layer_config(  # noqa: C901
                     rope_params = {"rope_type": "default", "rope_theta": 10000.0}
 
             if isinstance(rope_params, dict):
+                if is_omni:
+                    # vLLM's Qwen3-Omni DSpark contract requires the draft to
+                    # use logical 1-D RoPE; drop the MRoPE channels inherited
+                    # from the thinker text config.
+                    rope_params.pop("mrope_section", None)
                 _maybe_apply_mrope_full_head_hack(
                     rope_params, resolved_head_dim, mrope_full_head_hack
                 )
@@ -271,6 +289,9 @@ def create_transformer_layer_config(  # noqa: C901
         if hasattr(verifier_config, "rope_scaling"):
             rope_scaling = deepcopy(verifier_config.rope_scaling)
             if isinstance(rope_scaling, dict):
+                if is_omni:
+                    # Same 1-D RoPE requirement as the rope_parameters path.
+                    rope_scaling.pop("mrope_section", None)
                 _maybe_apply_mrope_full_head_hack(
                     rope_scaling, resolved_head_dim, mrope_full_head_hack
                 )

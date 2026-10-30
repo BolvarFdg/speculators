@@ -452,6 +452,11 @@ def _build_train_cmd(args, vllm_args):
     )
     if hasattr(config, "text_config"):
         config = config.text_config
+    elif hasattr(config, "thinker_config") and hasattr(
+        config.thinker_config, "text_config"
+    ):
+        # Qwen3-Omni: the verifier is the thinker's text model.
+        config = config.thinker_config.text_config
     num_hidden_layers = config.num_hidden_layers
 
     if args.target_layer_ids:

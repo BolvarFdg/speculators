@@ -10,12 +10,20 @@ from safetensors import safe_open
 
 _WEIGHT_ALIASES: dict[str, list[str]] = {
     "embed_tokens.weight": [
+        # Qwen3-Omni thinker (exact keys must beat the suffix match below,
+        # which would otherwise pick the talker's shorter embed_tokens key).
+        "thinker.model.embed_tokens.weight",
         "tok_embeddings.weight",
         "llm.embed.weight",
         "backbone.embeddings.weight",  # HF Mamba-backbone (NemotronH, Mamba, ...)
     ],
-    "lm_head.weight": ["output.weight", "llm.unembed.weight"],
+    "lm_head.weight": [
+        "thinker.lm_head.weight",
+        "output.weight",
+        "llm.unembed.weight",
+    ],
     "model.norm.weight": [
+        "thinker.model.norm.weight",
         "llm.norm.weight",
         # HF Mamba-backbone final norm (NemotronH, Mamba, ...); before bare
         # norm.weight so it beats per-layer backbone.layers.N.norm.weight.
@@ -28,11 +36,17 @@ _WEIGHT_ALIASES: dict[str, list[str]] = {
 def _resolve_key(name: str, weight_map: dict[str, str]) -> str | None:
     """Try exact match, then suffix match, then known aliases.
 
-    When multiple keys share a suffix, the shortest key wins (most specific).
+    Exact matches across all candidates are considered before any suffix
+    match: a later alias's exact key must beat the shortest suffix match of
+    the canonical name (e.g. Qwen3-Omni's ``thinker.model.embed_tokens.weight``
+    over the talker's ``talker.embed_tokens.weight``). When multiple keys
+    share a suffix, the shortest key wins.
     """
-    for candidate in [name, *_WEIGHT_ALIASES.get(name, [])]:
+    candidates = [name, *_WEIGHT_ALIASES.get(name, [])]
+    for candidate in candidates:
         if candidate in weight_map:
             return candidate
+    for candidate in candidates:
         matches = [k for k in weight_map if k.endswith(candidate)]
         if matches:
             return min(matches, key=len)

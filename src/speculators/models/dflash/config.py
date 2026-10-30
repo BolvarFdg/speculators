@@ -81,6 +81,16 @@ class DFlashSpeculatorConfig(SpeculatorModelConfig):
         ),
     )
 
+    use_aux_hidden_state: bool = Field(
+        default=True,
+        description=(
+            "Whether the drafter consumes concatenated verifier aux hidden "
+            "states as its context features. Always true for speculators-"
+            "trained drafts; serialized so vLLM's Qwen3-Omni DSpark contract "
+            "validation can enforce it."
+        ),
+    )
+
     @field_serializer("transformer_layer_config")
     def serialize_transformer_config(self, value: PretrainedConfig) -> dict:
         """Serialize transformer config to dict."""

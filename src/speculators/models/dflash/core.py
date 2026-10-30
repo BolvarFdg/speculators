@@ -24,6 +24,7 @@ from speculators.models.dflash.utils import (
 from speculators.models.utils import (
     conditional_torch_compile,
     flatten_rope_parameters,
+    is_qwen3_omni_verifier,
     resolve_target_layer_ids,
     resolve_verifier_norm_class,
 )
@@ -258,7 +259,7 @@ class DFlashDraftModel(DraftVocabMixin, SpeculatorModel):
         # True: sample from anchor too (block_size tokens)
         speculative_tokens = block_size if sample_from_anchor else block_size - 1
 
-        return {
+        config_kwargs = {
             "transformer_layer_config": verifier_config,
             "draft_vocab_size": kwargs["draft_vocab_size"],
             "block_size": block_size,
@@ -277,6 +278,16 @@ class DFlashDraftModel(DraftVocabMixin, SpeculatorModel):
                 ),
             ),
         }
+        # vLLM gates Qwen3-Omni DSpark serving on the standalone
+        # Qwen3OmniDSparkModel architecture (config/speculative.py
+        # _validate_qwen3_omni_dspark); other verifiers keep the
+        # algorithm's default architecture.
+        if algorithm == "dspark" and is_qwen3_omni_verifier(
+            kwargs["verifier_name_or_path"],
+            trust_remote_code=kwargs.get("trust_remote_code", False),
+        ):
+            config_kwargs["architectures"] = ["Qwen3OmniDSparkModel"]
+        return config_kwargs
 
     @staticmethod
     def get_trainer_kwargs(**kwargs) -> tuple[dict, dict]:

@@ -86,7 +86,38 @@ def get_verifier_config(
     )
     if hasattr(verifier_config, "text_config"):
         verifier_config = verifier_config.text_config
+    elif hasattr(verifier_config, "thinker_config") and hasattr(
+        verifier_config.thinker_config, "text_config"
+    ):
+        # Qwen3-Omni: the decoder is the thinker's text model.
+        verifier_config = verifier_config.thinker_config.text_config
     return verifier_config
+
+
+def is_qwen3_omni_verifier(
+    verifier_name_or_path: str,
+    trust_remote_code: bool = False,
+) -> bool:
+    """Whether the verifier is a Qwen3-Omni checkpoint.
+
+    Checked against the raw config's model_type so it stays true after
+    get_verifier_config() has unwrapped the thinker text config.
+    """
+    try:
+        raw_config = AutoConfig.from_pretrained(
+            verifier_name_or_path,
+            trust_remote_code=trust_remote_code,
+        )
+    except (OSError, ValueError, KeyError):
+        logger.warning(
+            "Could not resolve a config for verifier %s; assuming it is "
+            "not Qwen3-Omni.",
+            verifier_name_or_path,
+        )
+        return False
+    return str(getattr(raw_config, "model_type", "") or "").lower() == (
+        "qwen3_omni_moe"
+    )
 
 
 DEFAULT_TARGET_LAYER_IDS_WARNING = (
