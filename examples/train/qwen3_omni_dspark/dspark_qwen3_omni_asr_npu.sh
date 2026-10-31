@@ -121,17 +121,21 @@ trap 'kill "$SERVE_PID" 2>/dev/null || true' EXIT
 wait_healthy
 
 # ===== Step 3: prepare-data (render input_ids / loss_mask / messages) =====
-echo "=== Step 3: preparing data ==="
-if [[ "$MAX_SAMPLES" -gt 0 ]]; then
-    speculators prepare-data \
-        --model "$MODEL" --data "$ONPOLICY_DATA" --output "$PREPARED" \
-        --seq-length "$MAX_SEQ" --max-samples "$MAX_SAMPLES" \
-        --render-endpoint "http://localhost:${PORT}"
+if [[ ! -d "$PREPARED" ]]; then
+    echo "=== Step 3: preparing data ==="
+    if [[ "$MAX_SAMPLES" -gt 0 ]]; then
+        speculators prepare-data \
+            --model "$MODEL" --data "$ONPOLICY_DATA" --output "$PREPARED" \
+            --seq-length "$MAX_SEQ" --max-samples "$MAX_SAMPLES" \
+            --render-endpoint "http://localhost:${PORT}"
+    else
+        speculators prepare-data \
+            --model "$MODEL" --data "$ONPOLICY_DATA" --output "$PREPARED" \
+            --seq-length "$MAX_SEQ" \
+            --render-endpoint "http://localhost:${PORT}"
+    fi
 else
-    speculators prepare-data \
-        --model "$MODEL" --data "$ONPOLICY_DATA" --output "$PREPARED" \
-        --seq-length "$MAX_SEQ" \
-        --render-endpoint "http://localhost:${PORT}"
+    echo "=== Step 3 skipped: $PREPARED already exists ==="
 fi
 
 # ===== Step 4: DSpark training (hidden states from the live server) =====
