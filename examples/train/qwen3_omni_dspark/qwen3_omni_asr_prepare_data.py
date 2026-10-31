@@ -79,6 +79,8 @@ def cmd_convert(args: argparse.Namespace) -> None:
     mode = "a" if args.resume and out_path.exists() else "w"
     with open(args.input) as f, out_path.open(mode) as out:
         for line in f:
+            if args.limit is not None and converted >= args.limit:
+                break
             if not line.strip():
                 continue
             raw_rows += 1
@@ -209,6 +211,8 @@ def main() -> None:
     p_conv.add_argument("--output", required=True)
     p_conv.add_argument("--resume", action="store_true")
     p_conv.add_argument("--allow-missing-audio", action="store_true")
+    p_conv.add_argument("--limit", type=int, default=None,
+                        help="stop after N converted rows (smoke runs)")
     p_conv.set_defaults(func=cmd_convert)
 
     p_regen = sub.add_parser(
