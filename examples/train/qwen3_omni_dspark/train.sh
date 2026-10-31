@@ -24,6 +24,12 @@
 
 set -euo pipefail
 
+# Resolve this script's location so it can be launched from any directory.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+LAUNCH_VLLM="$REPO_ROOT/scripts/launch_vllm.py"
+[[ -f "$LAUNCH_VLLM" ]] || { echo "ERROR: $LAUNCH_VLLM not found (the speculators repo must stay in the image)"; exit 1; }
+
 # ============ Configuration (env-overridable) ============
 MODEL="${MODEL:-/path/to/your/final_gspo_qwen3_omni}"
 PREPARED="${PREPARED:-./output/dspark_qwen3_omni_asr/prepared}"  # from Phase A
@@ -89,7 +95,7 @@ EOF
 # ===== Step 3: hidden-states extraction server (up through training) =====
 echo "=== Step 3: launching hidden-states extraction server ==="
 ASCEND_RT_VISIBLE_DEVICES="$SERVER_GPUS" \
-    python scripts/launch_vllm.py "$MODEL" \
+    python "$LAUNCH_VLLM" "$MODEL" \
     --target-layer-ids $TARGET_LAYER_IDS \
     --hidden-states-path "$OUTPUT_DIR/hidden_states" \
     -- --port "$PORT" --tensor-parallel-size "$VLLM_TP" \

@@ -25,6 +25,12 @@
 
 set -euo pipefail
 
+# Resolve this script's location so it can be launched from any directory.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+PREPARE_PY="$SCRIPT_DIR/qwen3_omni_asr_prepare_data.py"
+[[ -f "$PREPARE_PY" ]] || { echo "ERROR: $PREPARE_PY not found"; exit 1; }
+
 # ============ Configuration (env-overridable) ============
 MODEL="${MODEL:-/path/to/your/final_gspo_qwen3_omni}"   # final gspo verifier
 RAW_DATA="${RAW_DATA:-./asr_raw.jsonl}"                 # messages/audios/(ground_truth) rows
@@ -59,7 +65,7 @@ wait_healthy() {
 # ===== Step 1: raw ASR JSONL -> conversations (offline) =====
 if [[ ! -s "$CONV_DATA" ]]; then
     echo "=== Step 1: converting raw data ==="
-    python3 examples/train/qwen3_omni_dspark/qwen3_omni_asr_prepare_data.py \
+    python3 "$PREPARE_PY" \
         convert --input "$RAW_DATA" --output "$CONV_DATA" "${LIMIT_ARGS[@]}"
 else
     echo "=== Step 1 skipped: $CONV_DATA exists ==="
@@ -79,7 +85,7 @@ wait_healthy
 # ===== Step 2: on-policy response regeneration =====
 if [[ ! -s "$ONPOLICY_DATA" ]]; then
     echo "=== Step 2: regenerating responses with $MODEL ==="
-    python3 examples/train/qwen3_omni_dspark/qwen3_omni_asr_prepare_data.py \
+    python3 "$PREPARE_PY" \
         regen \
         --input "$CONV_DATA" --output "$ONPOLICY_DATA" \
         --endpoint "http://localhost:${PORT}/v1" \

@@ -35,6 +35,14 @@
 
 set -euo pipefail
 
+# Resolve this script's location so it can be launched from any directory.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+PREPARE_PY="$SCRIPT_DIR/qwen3_omni_asr_prepare_data.py"
+LAUNCH_VLLM="$REPO_ROOT/scripts/launch_vllm.py"
+[[ -f "$PREPARE_PY" ]] || { echo "ERROR: $PREPARE_PY not found"; exit 1; }
+[[ -f "$LAUNCH_VLLM" ]] || { echo "ERROR: $LAUNCH_VLLM not found (the speculators repo must stay in the image)"; exit 1; }
+
 # ============ Configuration (env-overridable) ============
 MODEL="${MODEL:-/path/to/your/final_gspo_qwen3_omni}"   # final gspo verifier
 RAW_DATA="${RAW_DATA:-./asr_raw.jsonl}"                 # raw ASR rows
@@ -89,7 +97,7 @@ fi
 # ===== Step 0: raw ASR JSONL -> conversations (offline, checks audio exist) =====
 if [[ ! -s "$CONV_DATA" ]]; then
     echo "=== Step 0: converting raw data ==="
-    python3 examples/train/qwen3_omni_dspark/qwen3_omni_asr_prepare_data.py \
+    python3 "$PREPARE_PY" \
         convert --input "$RAW_DATA" --output "$CONV_DATA" "${LIMIT_ARGS[@]}"
 else
     echo "=== Step 0 skipped: $CONV_DATA exists ==="
@@ -107,7 +115,7 @@ if [[ ! -s "$ONPOLICY_DATA" ]]; then
     trap 'kill "$REGEN_PID" 2>/dev/null || true' EXIT
     wait_healthy
 
-    python3 examples/train/qwen3_omni_dspark/qwen3_omni_asr_prepare_data.py \
+    python3 "$PREPARE_PY" \
         regen \
         --input "$CONV_DATA" --output "$ONPOLICY_DATA" \
         --endpoint "http://localhost:${PORT}/v1" \
@@ -124,7 +132,7 @@ fi
 # ===== Step 2: hidden-states extraction server (up through training) =====
 echo "=== Step 2: launching hidden-states extraction server ==="
 ASCEND_RT_VISIBLE_DEVICES="$SERVER_GPUS" \
-    python scripts/launch_vllm.py "$MODEL" \
+    python "$LAUNCH_VLLM" "$MODEL" \
     --target-layer-ids $TARGET_LAYER_IDS \
     --hidden-states-path "$OUTPUT_DIR/hidden_states" \
     -- --port "$PORT" --tensor-parallel-size "$VLLM_TP" \
