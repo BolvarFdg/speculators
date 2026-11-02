@@ -55,10 +55,18 @@ def _fail(msg: str) -> None:
     sys.exit(1)
 
 
+# speculators conversations use sharegpt-style "human"/"gpt" turn labels;
+# the Qwen3-Omni chat template only recognizes user/system/assistant/tool
+# and silently drops other roles (dropping the audio placeholders with
+# them), so normalize before sending requests.
+_ROLE_MAP = {"human": "user", "gpt": "assistant"}
+
+
 def _adapt_turn(turn: dict) -> dict:
     """Map a conversations turn onto the vLLM chat-completions format."""
+    role = _ROLE_MAP.get(turn["from"], turn["from"])
     if isinstance(turn["value"], str):
-        return {"role": turn["from"], "content": turn["value"]}
+        return {"role": role, "content": turn["value"]}
     parts = []
     for part in turn["value"]:
         if part.get("type") == "audio":
@@ -66,7 +74,7 @@ def _adapt_turn(turn: dict) -> dict:
             parts.append({"type": "audio_url", "audio_url": {"url": url}})
         else:
             parts.append({"type": "text", "text": part.get("text", "")})
-    return {"role": turn["from"], "content": parts}
+    return {"role": role, "content": parts}
 
 
 def cmd_convert(args: argparse.Namespace) -> None:
@@ -149,8 +157,9 @@ def cmd_convert(args: argparse.Namespace) -> None:
 def _regen_one(client: OpenAI, model: str, row: dict,
                max_tokens: int, temperature: float) -> str:
     convs = row["conversations"]
+    # All turns except the final placeholder response. History assistant
+    # turns are kept so multi-turn context renders correctly.
     prompt_msgs = [_adapt_turn(t) for t in convs[:-1]]
-    prompt_msgs = [m for m in prompt_msgs if m["role"] != "assistant"]
     resp = client.chat.completions.create(
         model=model, messages=prompt_msgs, max_tokens=max_tokens,
         temperature=temperature,
