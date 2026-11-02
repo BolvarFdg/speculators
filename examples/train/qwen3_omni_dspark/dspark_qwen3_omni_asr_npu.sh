@@ -56,6 +56,18 @@ TRAIN_GPUS="${TRAIN_GPUS:-8,9}"
 NUM_TRAIN_GPUS="${NUM_TRAIN_GPUS:-2}"
 VLLM_TP="${VLLM_TP:-8}"
 
+# NPU graph capture mode. FULL captures prefill+decode graphs and can hit
+# stream/memory limits on 32GB cards; FULL_DECODE_ONLY halves the graph
+# count and is enough for this offline workload. Set CG_MODE=NONE to
+# disable graphs entirely (eager).
+CG_MODE="${CG_MODE:-FULL_DECODE_ONLY}"
+# Server batch caps: aligned with the regen client's --concurrency 64 and
+# kept small so ACL graph capture builds fewer, smaller graphs (fewer
+# streams -> avoids Ascend EE1023 "Too many streams are created").
+MAX_SEQS="${MAX_SEQS:-64}"
+CG_MAX_SIZE="${CG_MAX_SIZE:-32}"
+
+
 MAX_SAMPLES="${MAX_SAMPLES:-0}"          # 0 = full data; 5000 for a smoke run
 MAX_SEQ="${MAX_SEQ:-4096}"               # audio is ~13 tok/s
 REGEN_TEMPERATURE="${REGEN_TEMPERATURE:-0.0}"   # match serving sampling
@@ -110,7 +122,9 @@ if [[ ! -s "$ONPOLICY_DATA" ]]; then
         vllm serve "$MODEL" \
         --port "$PORT" --tensor-parallel-size "$VLLM_TP" \
         --allowed-local-media-path "$AUDIO_ROOT" \
-        --max-model-len 8192 --gpu-memory-utilization 0.85 &
+        --max-model-len 8192 --gpu-memory-utilization 0.85 \
+        --compilation-config "{\"cudagraph_mode\": \"$CG_MODE\"}" \
+        --max-num-seqs "$MAX_SEQS" --max-cudagraph-capture-size "$CG_MAX_SIZE" &
     REGEN_PID=$!
     trap 'kill "$REGEN_PID" 2>/dev/null || true' EXIT
     wait_healthy
@@ -137,7 +151,9 @@ ASCEND_RT_VISIBLE_DEVICES="$SERVER_GPUS" \
     --hidden-states-path "$OUTPUT_DIR/hidden_states" \
     -- --port "$PORT" --tensor-parallel-size "$VLLM_TP" \
        --allowed-local-media-path "$AUDIO_ROOT" \
-       --max-model-len 8192 --gpu-memory-utilization 0.85 &
+       --max-model-len 8192 --gpu-memory-utilization 0.85 \
+        --compilation-config "{\"cudagraph_mode\": \"$CG_MODE\"}" \
+        --max-num-seqs "$MAX_SEQS" --max-cudagraph-capture-size "$CG_MAX_SIZE" &
 SERVE_PID=$!
 trap 'kill "$SERVE_PID" 2>/dev/null || true' EXIT
 wait_healthy
