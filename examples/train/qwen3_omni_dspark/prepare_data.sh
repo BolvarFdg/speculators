@@ -25,6 +25,19 @@
 
 set -euo pipefail
 
+# Guard: the repo checkout directory is itself named "speculators". Launching
+# from its PARENT directory makes Python resolve that directory (which has no
+# __init__.py) as a namespace package, shadowing the installed one -- the
+# "speculators" CLI then fails with "No module named 'speculators.__main__'"
+# and "torchrun -m speculators.train" breaks the same way. Launch from any
+# other directory instead.
+if [[ -d "./speculators" && ! -f "./speculators/__init__.py" ]]; then
+    echo "ERROR: current directory contains a 'speculators/' repo checkout." >&2
+    echo "       It shadows the installed package. Launch this script from another" >&2
+    echo "       directory, e.g.:  cd /root && bash $0" >&2
+    exit 1
+fi
+
 # Resolve this script's location so it can be launched from any directory.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
