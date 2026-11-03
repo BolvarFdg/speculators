@@ -5,8 +5,10 @@ This module contains the base model classes for speculative decoding implementat
 in the Speculators library.
 """
 
+import json
 import os
 from abc import abstractmethod
+from pathlib import Path
 from typing import ClassVar
 
 import torch
@@ -578,6 +580,29 @@ class SpeculatorModel(ClassRegistryMixin, PreTrainedModel):  # type: ignore[misc
         config.tie_word_embeddings = False
         super().__init__(config, **kwargs)
         self.config: SpeculatorModelConfig = config
+
+    def save_pretrained(self, save_directory, **kwargs):
+        """Save while preserving the config's declared ``architectures``.
+
+        transformers' ``PreTrainedModel.save_pretrained`` stamps the model
+        class name into ``config.architectures`` before writing (and onto the
+        in-memory config), clobbering values the config carries for
+        serving-side loaders: vLLM's speculators-format conversion selects the
+        runtime architecture from them (e.g. ``Qwen3OmniDSparkModel`` for
+        Qwen3-Omni DSpark drafts). Restore both the in-memory config and the
+        written config.json after saving.
+        """
+        intended = list(getattr(self.config, "architectures", None) or [])
+        saved = super().save_pretrained(save_directory, **kwargs)
+        if intended and intended != [type(self).__name__]:
+            self.config.architectures = intended
+            cfg_path = Path(save_directory) / "config.json"
+            if cfg_path.is_file():
+                cfg = json.loads(cfg_path.read_text())
+                if cfg.get("architectures") != intended:
+                    cfg["architectures"] = intended
+                    cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
+        return saved
 
     def forward(self, *args, **kwargs):
         raise NotImplementedError(
