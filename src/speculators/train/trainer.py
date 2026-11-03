@@ -22,6 +22,10 @@ from transformers import (
 )
 
 from speculators.model import SpeculatorModel
+from speculators.utils.util import (
+    accelerator_memory_allocated,
+    accelerator_synchronize,
+)
 from speculators.train.checkpointer import (
     BaseCheckpointer,
     DistributedCheckpointer,
@@ -77,10 +81,10 @@ class _StepTimer:
 
     def mark(self, name: str) -> None:
         if self.enabled:
-            torch.accelerator.synchronize()
+            accelerator_synchronize()
             self._marks[name] = time.perf_counter()
             if torch.accelerator.is_available():
-                self._memory[name] = torch.accelerator.memory_allocated() / (1024**2)
+                self._memory[name] = accelerator_memory_allocated() / (1024**2)
 
     def mark_value(self, name: str, value: float) -> None:
         if self.enabled:
@@ -89,7 +93,7 @@ class _StepTimer:
     def now(self) -> float | None:
         if not self.enabled:
             return None
-        torch.accelerator.synchronize()
+        accelerator_synchronize()
         return time.perf_counter()
 
     def profile(self, num_tokens: int) -> dict | None:

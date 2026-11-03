@@ -287,6 +287,12 @@ class DFlashDraftModel(DraftVocabMixin, SpeculatorModel):
             trust_remote_code=kwargs.get("trust_remote_code", False),
         ):
             config_kwargs["architectures"] = ["Qwen3OmniDSparkModel"]
+            # The same validation also requires an explicit target_hidden_size
+            # matching the thinker text config (the draft hidden size is
+            # seeded from it, so they are equal here).
+            config_kwargs["target_hidden_size"] = getattr(
+                verifier_config, "hidden_size", None
+            )
         return config_kwargs
 
     @staticmethod
