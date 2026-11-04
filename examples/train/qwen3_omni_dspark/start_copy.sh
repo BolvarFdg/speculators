@@ -60,7 +60,7 @@ cd "$SRC"
 find "${TODO_DIRS[@]}" -mindepth 1 -maxdepth 1 -type d -print0 \
   | xargs -0 -P "$PARALLEL" -n1 bash -c '
       d="$1"; name=${d//\//_}
-      if rsync -aR "$d" "$DST" > "$LOGDIR/$name.progress" 2>&1; then
+      if rsync -aR --info=progress2 "$d" "$DST" > "$LOGDIR/$name.progress" 2>&1; then
           echo "$(date "+%F %T") OK    $name" >> "$LOGDIR/status.txt"
       else
           echo "$(date "+%F %T") FAIL  $name rc=$?" >> "$LOGDIR/status.txt"
