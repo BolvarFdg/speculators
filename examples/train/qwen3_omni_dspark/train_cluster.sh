@@ -2,7 +2,7 @@
 # Multi-instance (cluster) DSpark training on Huawei Cloud.
 #
 # SUBMIT ONCE with N instances: the platform runs this same script on every
-# node; each node's VC_TASK_RANK tells it apart. You do NOT ssh into nodes.
+# node; NODE_RANK tells the nodes apart. You do NOT ssh into nodes.
 #
 # Per-node layout (8 cards):
 #   cards 0-3: local hidden-states extraction server (TP4)
@@ -11,28 +11,15 @@
 #              requests its own samples -> no cross-node conflicts)
 #
 # Two operating modes:
-#
 #   PREP_IN_JOB=0 (default): data was prepared by an earlier single-instance
-#       job running prepare_data.sh (Task 1). This job trains only.
-#
-#   PREP_IN_JOB=1: single-job mode, mirroring the classic DFlash layout --
-#       rank 0 runs the whole data preparation inside this job (convert +
-#       regen + prepare-data, using all 8 of its cards) while the other
-#       nodes poll a ready-flag on shared NFS; when it appears, every node
-#       enters the server+training phase together. Costs you 7 idle nodes
-#       during (multi-hour) regen; the two-job mode avoids that.
-#
-# MASTER_ADDR resolution order (no manual per-node input possible):
-#   1) MASTER_ADDR env (use whatever source your reference script used)
-#   2) a hosts-list env (VC_WORKER_HOSTS / MA_WORKER_HOSTS / WORKER_HOSTS,
-#      first comma-separated entry, ":port" stripped)
-#   3) NFS file written by rank 0 at startup ($WORK_DIR/master.ip); other
-#      ranks poll for it. NOTE: use a per-job WORK_DIR or clean master.ip
-#      between jobs to avoid reading a stale IP from a previous run.
+#       job running prepare_data.sh. This job trains only.
+#   PREP_IN_JOB=1: rank 0 runs the whole data preparation inside this job
+#       (convert + regen + prepare-data) while the other nodes poll a
+#       ready-flag on shared NFS; then every node trains together.
 #
 # Usage (identical command on every instance, submitted once):
-#   bash train_cluster.sh                    # two-job mode
-#   PREP_IN_JOB=1 RAW_DATA=... bash train_cluster.sh   # single-job mode
+#   bash train_cluster.sh
+#   PREP_IN_JOB=1 RAW_DATA=... bash train_cluster.sh
 
 set -euo pipefail
 
@@ -46,23 +33,23 @@ if [[ -d "./speculators" && ! -f "./speculators/__init__.py" ]]; then
     exit 1
 fi
 
-# ===== Platform =====
-RANK="${RANK:-${VC_TASK_RANK:?VC_TASK_RANK not set -- submit as a multi-instance job}}"
-WORLD="${WORLD:-${VC_TASK_NUM:-${MA_NUM_HOSTS:-${VC_WORKER_NUM:?set WORLD, VC_TASK_NUM or MA_NUM_HOSTS}}}}"
-MASTER_PORT="${MASTER_PORT:-38888}"   # matches the team's proven cluster port
+# ===== Platform env vars (same source as the reference DFlash script) =====
+MASTER_ADDR="$VC_WORKER_HOSTS"
+MASTER_PORT="38888"
+NNODES="$MA_NUM_HOSTS"
+NODE_RANK="$VC_TASK_INDEX"
 PORT="${PORT:-8000}"                       # local extraction server port
 PREP_IN_JOB="${PREP_IN_JOB:-0}"
-PREP_WAIT_TIMEOUT="${PREP_WAIT_TIMEOUT:-86400}"   # seconds other ranks wait for rank 0
+PREP_WAIT_TIMEOUT="${PREP_WAIT_TIMEOUT:-86400}"   # seconds others wait for rank 0
 
 # ===== Shared NFS paths (MUST be identical on every instance) =====
 MODEL="${MODEL:-/mnt/nfs/models/qwen3_omni_asr_gspo}"
-WORK_DIR="${WORK_DIR:-/mnt/nfs/dspark}"                   # everything lives here
+WORK_DIR="${WORK_DIR:-/mnt/nfs/dspark}"                   # all artifacts live here
 RAW_DATA="${RAW_DATA:-$WORK_DIR/raw/asr.jsonl}"          # needed when PREP_IN_JOB=1
 AUDIO_ROOT="${AUDIO_ROOT:-/mnt/nfs/audios}"
 PREPARED="$WORK_DIR/prepared"
 HIDDEN_STATES="$WORK_DIR/hidden_states"
 READY_FLAG="$WORK_DIR/.data_ready"
-MASTER_IP_FILE="$WORK_DIR/master.ip"
 
 # ===== NPU layout / training hyperparameters (per instance) =====
 SERVER_GPUS="${SERVER_GPUS:-0,1,2,3}"
@@ -85,39 +72,11 @@ LOSS_FN='{"ce": 0.1, "tv": 0.9}'
 # ========================================
 
 mkdir -p "$WORK_DIR"
-[[ "$RANK" -ge 0 && "$RANK" -lt "$WORLD" ]] || { echo "ERROR: RANK=$RANK out of range [0,$WORLD)"; exit 1; }
-
-# ---------- MASTER_ADDR resolution ----------
-resolve_master_addr() {
-    if [[ -n "${MASTER_ADDR:-}" ]]; then
-        echo "$MASTER_ADDR"; return
-    fi
-    local hosts
-    for var in VC_WORKER_HOSTS MA_WORKER_HOSTS WORKER_HOSTS; do
-        hosts="${!var:-}"
-        if [[ -n "$hosts" ]]; then
-            echo "${hosts%%,*}" | cut -d: -f1
-            echo "  (master addr from \$$var)" >&2
-            return
-        fi
-    done
-    if [[ "$RANK" -eq 0 ]]; then
-        hostname -I | awk '{print $1}' > "$MASTER_IP_FILE"
-        echo "$(cat "$MASTER_IP_FILE")"; return
-    fi
-    local waited=0
-    until [[ -s "$MASTER_IP_FILE" ]]; do
-        sleep 5; waited=$((waited + 5))
-        [[ $waited -ge 600 ]] && { echo "ERROR: $MASTER_IP_FILE never appeared" >&2; exit 1; }
-    done
-    echo "$(cat "$MASTER_IP_FILE")"
-}
-MASTER_ADDR="$(resolve_master_addr)"
-echo "instance $RANK/$WORLD  master=$MASTER_ADDR:$MASTER_PORT"
+echo "node $NODE_RANK/$NNODES  master=$MASTER_ADDR:$MASTER_PORT"
 
 # ---------- Single-job mode: rank 0 prepares, others wait ----------
 if [[ "$PREP_IN_JOB" == "1" ]]; then
-    if [[ "$RANK" -eq 0 ]]; then
+    if [[ "$NODE_RANK" -eq 0 ]]; then
         rm -f "$READY_FLAG"
         echo "=== rank 0: running data preparation (prepare_data.sh) ==="
         MODEL="$MODEL" RAW_DATA="$RAW_DATA" WORK_DIR="$WORK_DIR" AUDIO_ROOT="$AUDIO_ROOT" \
@@ -126,7 +85,7 @@ if [[ "$PREP_IN_JOB" == "1" ]]; then
         touch "$READY_FLAG"
         echo "=== rank 0: data ready ==="
     else
-        echo "=== rank $RANK: waiting for rank 0 to finish data preparation ==="
+        echo "=== rank $NODE_RANK: waiting for rank 0 to finish data preparation ==="
         waited=0
         until [[ -f "$READY_FLAG" ]]; do
             sleep 30; waited=$((waited + 30))
@@ -135,7 +94,7 @@ if [[ "$PREP_IN_JOB" == "1" ]]; then
             fi
             [[ $waited -ge "$PREP_WAIT_TIMEOUT" ]] && { echo "ERROR: timed out waiting for .data_ready" >&2; exit 1; }
         done
-        echo "=== rank $RANK: data ready ==="
+        echo "=== rank $NODE_RANK: data ready ==="
     fi
 fi
 
@@ -143,7 +102,7 @@ fi
 [[ -d "$PREPARED" ]] || { echo "ERROR: PREPARED=$PREPARED not found (run prepare_data.sh first, or PREP_IN_JOB=1)"; exit 1; }
 
 # ---------- Local extraction server (cards 0-3) ----------
-echo "=== starting local extraction server (instance $RANK) ==="
+echo "=== starting local extraction server (node $NODE_RANK) ==="
 ASCEND_RT_VISIBLE_DEVICES="$SERVER_GPUS" \
     python "$LAUNCH_VLLM" "$MODEL" \
     --target-layer-ids $TARGET_LAYER_IDS \
@@ -161,10 +120,10 @@ done
 echo "local extraction server healthy on :$PORT"
 
 # ---------- Multi-node DDP training (cards 4-7) ----------
-echo "=== launching multi-node training (instance $RANK/$WORLD) ==="
+echo "=== launching multi-node training (node $NODE_RANK/$NNODES) ==="
 ASCEND_RT_VISIBLE_DEVICES="$TRAIN_GPUS" \
     torchrun \
-    --nnodes="$WORLD" --node-rank="$RANK" \
+    --nnodes="$NNODES" --node-rank="$NODE_RANK" \
     --master-addr="$MASTER_ADDR" --master-port="$MASTER_PORT" \
     --nproc_per_node="$NUM_TRAIN_GPUS" \
     -m speculators.train \
@@ -188,4 +147,4 @@ ASCEND_RT_VISIBLE_DEVICES="$TRAIN_GPUS" \
 
 kill "$SERVE_PID" && wait "$SERVE_PID" 2>/dev/null || true
 trap - EXIT
-echo "instance $RANK done. Checkpoints: $WORK_DIR/checkpoints"
+echo "node $NODE_RANK done. Checkpoints: $WORK_DIR/checkpoints"
