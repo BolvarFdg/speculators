@@ -44,6 +44,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 PREPARE_PY="$SCRIPT_DIR/qwen3_omni_asr_prepare_data.py"
 [[ -f "$PREPARE_PY" ]] || { echo "ERROR: $PREPARE_PY not found"; exit 1; }
 
+# Shared paths: edit cluster_env.sh once instead of this script.
+ENV_FILE="$SCRIPT_DIR/cluster_env.sh"
+[[ -f "$ENV_FILE" ]] && source "$ENV_FILE"
+
 # ============ Configuration (env-overridable) ============
 MODEL="${MODEL:-/path/to/your/final_gspo_qwen3_omni}"   # final gspo verifier
 RAW_DATA="${RAW_DATA:-./asr_raw.jsonl}"                 # messages/audios/(ground_truth) rows

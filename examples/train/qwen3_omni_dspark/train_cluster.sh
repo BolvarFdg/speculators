@@ -33,6 +33,10 @@ if [[ -d "./speculators" && ! -f "./speculators/__init__.py" ]]; then
     exit 1
 fi
 
+# Shared paths: edit cluster_env.sh once instead of this script.
+ENV_FILE="$SCRIPT_DIR/cluster_env.sh"
+[[ -f "$ENV_FILE" ]] && source "$ENV_FILE"
+
 # ===== Platform env vars (same source as the reference DFlash script) =====
 MASTER_ADDR="${VC_WORKER_HOSTS%%,*}"
 MASTER_PORT="38888"
