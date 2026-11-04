@@ -34,7 +34,7 @@ if [[ -d "./speculators" && ! -f "./speculators/__init__.py" ]]; then
 fi
 
 # ===== Platform env vars (same source as the reference DFlash script) =====
-MASTER_ADDR="$VC_WORKER_HOSTS"
+MASTER_ADDR="${VC_WORKER_HOSTS%%,*}"
 MASTER_PORT="38888"
 NNODES="$MA_NUM_HOSTS"
 NODE_RANK="$VC_TASK_INDEX"
