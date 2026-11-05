@@ -159,6 +159,8 @@ if [[ ! -f "$REGEN_FLAG" ]]; then
         --concurrency "$REGEN_CONCURRENCY" --resume \
         --shard-index "$NODE_RANK" --shard-count "$NNODES" \
         "${LIMIT_ARGS[@]}"
+    touch "$REGEN_FLAG"
+    echo "=== [$NODE_RANK] regen done ==="
     # Phase 3 needs the plain server too (render); keep it running.
 else
     echo "=== [$NODE_RANK] phase 2 skipped: $REGEN_FLAG exists ==="
@@ -182,18 +184,21 @@ else
     echo "=== [$NODE_RANK] phase 3 skipped: $RENDER_FLAG exists ==="
 fi
 
-# rank 0 merges all shards; others wait for the final .data_ready flag
+# rank 0 stops its server FIRST (its own regen+render are done, the server
+# would just idle on 8 cards while waiting -- and a long-idling 30B server
+# eventually gets killed by the platform/memory watchdog).
+# Other ranks stop theirs too, then everyone waits for .data_ready.
+stop_plain_server
+
 if [[ "$NODE_RANK" -eq 0 ]]; then
     echo "=== [0] waiting for all $NNODES shards before merge ==="
     for i in $(seq 0 $((NNODES - 1))); do
         wait_for "$WORK_DIR/.render_done_$i" "shard $i render"
     done
-    stop_plain_server
     echo "=== [0] merging $NNODES shards ==="
     python3 "$MERGE_PY" --work-dir "$WORK_DIR" --shard-count "$NNODES"
     touch "$WORK_DIR/.data_ready"
 else
-    stop_plain_server
     echo "=== [$NODE_RANK] waiting for rank 0 merge ==="
     wait_for "$WORK_DIR/.data_ready" "data_ready flag"
 fi
