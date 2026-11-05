@@ -75,24 +75,30 @@ def main() -> None:
 
     # ---- merge token_freq (counts are additive: shard sums == full-dataset
     # frequency by construction)
-    freq_total: dict[str, int] = {}
-    for d in shard_dirs:
-        freq = torch.load(d / "token_freq.pt")
-        if not isinstance(freq, dict):
-            _fail(f"{d}/token_freq.pt is not a mapping")
-        for k, v in freq.items():
-            freq_total[k] = freq_total.get(k, 0) + int(v)
-
-    spot = sorted(freq_total, key=freq_total.get, reverse=True)[:5]
-    for k in spot:
-        expected = sum(
-            int(torch.load(d / "token_freq.pt").get(k, 0)) for d in shard_dirs
-        )
-        if freq_total[k] != expected:
-            _fail(f"token_freq spot check failed for {k!r}: "
-                  f"{freq_total[k]} != {expected}")
-    print(f"verification 3 OK: token_freq summed, "
-          f"{len(freq_total)} unique tokens, top5={spot}")
+    # ---- merge token_freq if present; otherwise compute from the dataset
+    freq_files = [d / "token_freq.pt" for d in shard_dirs]
+    if all(f.is_file() for f in freq_files):
+        freq_total: dict = {}
+        for f in freq_files:
+            freq = torch.load(f)
+            for k, v in freq.items():
+                freq_total[k] = freq_total.get(k, 0) + int(v)
+        print(f"token_freq: merged from {args.shard_count} shard files, "
+              f"{len(freq_total)} unique tokens")
+    elif all(not f.is_file() for f in freq_files):
+        # speculators prepare-data did not emit token_freq.pt in this
+        # environment; compute it from the merged dataset's input_ids.
+        from collections import Counter
+        counter: Counter = Counter()
+        for ids in merged["input_ids"]:
+            counter.update(ids)
+        freq_total = {str(k): int(v) for k, v in counter.items()}
+        print(f"token_freq: computed from merged dataset, "
+              f"{len(freq_total)} unique tokens")
+    else:
+        present = sum(f.is_file() for f in freq_files)
+        _fail(f"token_freq.pt inconsistent: {present}/{args.shard_count} "
+              "shards have it -- re-run prepare-data on all shards")
 
     # ---- write the merged dataset (atomic-ish: write beside, then rename)
     prepared = work / "prepared"
