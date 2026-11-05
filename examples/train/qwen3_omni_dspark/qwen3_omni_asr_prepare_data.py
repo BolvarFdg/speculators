@@ -79,6 +79,7 @@ def _adapt_turn(turn: dict) -> dict:
 
 def cmd_convert(args: argparse.Namespace) -> None:
     raw_rows, converted, empty_gt, fallback_asst = 0, 0, 0, 0
+    no_marker, leftover_audios, extra_markers = 0, 0, 0
     missing_audio = []
     out_path = Path(args.output)
     if out_path.exists() and not args.resume:
@@ -117,13 +118,30 @@ def cmd_convert(args: argparse.Namespace) -> None:
 
             user_parts, audio_idx = [], 0
             for seg in AUDIO_PLACEHOLDER.split(user_msg.get("content") or ""):
-                if seg == "<audio>":
+                if seg == "<audio>" and audio_idx < len(audios):
                     user_parts.append(
                         {"type": "audio", "path": audios[audio_idx]}
                     )
                     audio_idx += 1
+                elif seg == "<audio>":
+                    extra_markers += 1  # more markers than audios
                 elif seg:
                     user_parts.append({"type": "text", "text": seg})
+
+            # Audios never referenced by a "<audio>" marker must still be
+            # attached: with no marker at all (instruction lives in the
+            # system prompt, user turn is plain text) prepend the audio at
+            # the head of the user turn; leftover audios append at the end.
+            if audio_idx == 0 and audios:
+                user_parts = [
+                    {"type": "audio", "path": p} for p in audios
+                ] + user_parts
+                no_marker += 1
+            elif audio_idx < len(audios):
+                user_parts += [
+                    {"type": "audio", "path": p} for p in audios[audio_idx:]
+                ]
+                leftover_audios += 1
 
             convs = []
             sys_msg = next(
@@ -145,6 +163,9 @@ def cmd_convert(args: argparse.Namespace) -> None:
     print(f"rows: {raw_rows}  converted: {converted}  "
           f"skipped(no response): {empty_gt}  "
           f"response_from_assistant_turn: {fallback_asst}")
+    print(f"audio attach: no_marker(head): {no_marker}  "
+          f"leftover_appended: {leftover_audios}  "
+          f"extra_markers_dropped: {extra_markers}")
     if missing_audio:
         print(f"missing audio files: {len(missing_audio)}")
         for p in missing_audio[:10]:
