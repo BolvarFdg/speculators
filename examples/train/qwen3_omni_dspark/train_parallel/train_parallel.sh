@@ -94,7 +94,7 @@ wait_for() {  # wait_for <path> <label>
     local waited=0
     until [[ -e "$1" ]]; do
         sleep 30; waited=$((waited + 30))
-        if (( waited % 300 == 0 )); then echo "  waiting for $2 (${waited}s)"; fi
+        if (( waited % 30 == 0 )); then echo "  waiting for $2 (${waited}s)"; fi
         [[ $waited -ge "$BARRIER_TIMEOUT" ]] && { echo "ERROR: timed out waiting for $2" >&2; exit 1; }
     done
 }
