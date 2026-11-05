@@ -24,7 +24,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 LAUNCH_VLLM="$REPO_ROOT/scripts/launch_vllm.py"
 PREPARE_PY="$SCRIPT_DIR/qwen3_omni_asr_prepare_data.py"
 MERGE_PY="$SCRIPT_DIR/merge_prepared.py"
