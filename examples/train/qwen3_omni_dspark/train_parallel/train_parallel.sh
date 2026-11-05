@@ -100,6 +100,15 @@ wait_for() {  # wait_for <path> <label>
 }
 
 start_plain_server() {  # TP8 plain server for regen/render, on all 8 cards
+    # Stagger: rank 0 starts immediately, rank N waits N*30s so nodes don't
+    # all hammer the NFS for model weights simultaneously (aggregate NFS
+    # bandwidth is the bottleneck; 8 concurrent 60GB reads cause NPU
+    # runtime memory-allocation timeouts).
+    local delay=$(( NODE_RANK * 30 ))
+    if [[ $delay -gt 0 ]]; then
+        echo "=== [$NODE_RANK] waiting ${delay}s before server start (NFS stagger) ==="
+        sleep "$delay"
+    fi
     echo "=== [$NODE_RANK] starting plain TP8 server (regen/render) ==="
     ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
         vllm serve "$MODEL" \
