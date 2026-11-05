@@ -149,6 +149,11 @@ fi
 
 # ================= Phase 2: sharded regen (all nodes) =================
 REGEN_FLAG="$WORK_DIR/.regen_done_${NODE_RANK}"
+# Guard: stale flag without its shard file means data was cleaned up.
+if [[ -f "$REGEN_FLAG" && ! -s "$SHARD_ONPOLICY" ]]; then
+    echo "=== [$NODE_RANK] stale regen flag (no $SHARD_ONPOLICY); re-running phase 2 ==="
+    rm -f "$REGEN_FLAG"
+fi
 if [[ ! -f "$REGEN_FLAG" ]]; then
     start_plain_server
     echo "=== [$NODE_RANK] phase 2: sharded regen ($NODE_RANK/$NNODES) ==="
@@ -168,6 +173,12 @@ fi
 
 # ================= Phase 3: sharded render + merge =================
 RENDER_FLAG="$WORK_DIR/.render_done_${NODE_RANK}"
+# Guard: a stale flag without its artifact means a previous run's data was
+# cleaned up -- drop the flag so this phase actually re-runs.
+if [[ -f "$RENDER_FLAG" && ! -f "$SHARD_PREPARED/.shard_meta" ]]; then
+    echo "=== [$NODE_RANK] stale render flag (no $SHARD_PREPARED/.shard_meta); re-running phase 3 ==="
+    rm -f "$RENDER_FLAG"
+fi
 if [[ ! -f "$RENDER_FLAG" ]]; then
     [[ -n "${SERVE_PID:-}" ]] || start_plain_server
     echo "=== [$NODE_RANK] phase 3: rendering shard $NODE_RANK/$NNODES ==="
