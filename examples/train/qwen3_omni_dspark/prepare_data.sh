@@ -106,6 +106,7 @@ ASCEND_RT_VISIBLE_DEVICES="$GPUS" \
     vllm serve "$MODEL" \
     --port "$PORT" --tensor-parallel-size "$VLLM_TP" \
     --allowed-local-media-path "$AUDIO_ROOT" \
+    --enable-scale-out \
     --max-model-len 8192 --gpu-memory-utilization 0.85 \
         --compilation-config "{\"cudagraph_mode\": \"$CG_MODE\"}" \
         --max-num-seqs "$MAX_SEQS" --max-cudagraph-capture-size "$CG_MAX_SIZE" &
