@@ -79,7 +79,7 @@ def _adapt_turn(turn: dict) -> dict:
 
 def cmd_convert(args: argparse.Namespace) -> None:
     raw_rows, converted, empty_gt, fallback_asst = 0, 0, 0, 0
-    no_marker, leftover_audios, extra_markers = 0, 0, 0
+    no_marker, leftover_audios, extra_markers, skipped_audio = 0, 0, 0, 0
     missing_audio = []
     out_path = Path(args.output)
     if out_path.exists() and not args.resume:
@@ -143,6 +143,17 @@ def cmd_convert(args: argparse.Namespace) -> None:
                 ]
                 leftover_audios += 1
 
+            # Skip rows with missing audio files instead of sending them to
+            # the server (server-side 404s cost 3-10s each in retries).
+            row_missing = False
+            for part in user_parts:
+                if part["type"] == "audio" and not Path(part["path"]).exists():
+                    missing_audio.append(part["path"])
+                    row_missing = True
+            if row_missing:
+                skipped_audio += 1
+                continue
+
             convs = []
             sys_msg = next(
                 (m for m in row["messages"] if m["role"] == "system"), None
@@ -152,27 +163,23 @@ def cmd_convert(args: argparse.Namespace) -> None:
             convs.append({"from": "human", "value": user_parts})
             # Placeholder response: the regen step replaces it on-policy.
             convs.append({"from": "gpt", "value": gt})
-
-            for part in user_parts:
-                if part["type"] == "audio" and not Path(part["path"]).exists():
-                    missing_audio.append(part["path"])
             out.write(json.dumps({"conversations": convs}, ensure_ascii=False))
             out.write("\n")
             converted += 1
 
     print(f"rows: {raw_rows}  converted: {converted}  "
           f"skipped(no response): {empty_gt}  "
+          f"skipped(missing audio): {skipped_audio}  "
           f"response_from_assistant_turn: {fallback_asst}")
     print(f"audio attach: no_marker(head): {no_marker}  "
           f"leftover_appended: {leftover_audios}  "
           f"extra_markers_dropped: {extra_markers}")
     if missing_audio:
-        print(f"missing audio files: {len(missing_audio)}")
+        print(f"missing audio files (rows skipped): {len(missing_audio)}")
         for p in missing_audio[:10]:
             print("  ", p)
-        if not args.allow_missing_audio:
-            _fail("audio files not found locally -- sync them first, or pass "
-                  "--allow-missing-audio to drop rows lazily at regen time")
+        if len(missing_audio) > 10:
+            print(f"  ... and {len(missing_audio) - 10} more")
 
 
 def _regen_one(client: OpenAI, model: str, row: dict,
@@ -240,7 +247,6 @@ def main() -> None:
     p_conv.add_argument("--input", required=True)
     p_conv.add_argument("--output", required=True)
     p_conv.add_argument("--resume", action="store_true")
-    p_conv.add_argument("--allow-missing-audio", action="store_true")
     p_conv.add_argument("--limit", type=int, default=None,
                         help="stop after N converted rows (smoke runs)")
     p_conv.set_defaults(func=cmd_convert)

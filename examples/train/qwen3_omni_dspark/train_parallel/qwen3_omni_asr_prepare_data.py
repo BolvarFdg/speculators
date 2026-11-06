@@ -79,7 +79,7 @@ def _adapt_turn(turn: dict) -> dict:
 
 def cmd_convert(args: argparse.Namespace) -> None:
     raw_rows, converted, empty_gt, fallback_asst = 0, 0, 0, 0
-    no_marker, leftover_audios, extra_markers = 0, 0, 0
+    no_marker, leftover_audios, extra_markers, skipped_audio = 0, 0, 0, 0
     missing_audio = []
     out_path = Path(args.output)
     if out_path.exists() and not args.resume:
@@ -143,6 +143,17 @@ def cmd_convert(args: argparse.Namespace) -> None:
                 ]
                 leftover_audios += 1
 
+            # Skip rows with missing audio files instead of sending them to
+            # the server (server-side 404s cost 3-10s each in retries).
+            row_missing = False
+            for part in user_parts:
+                if part["type"] == "audio" and not Path(part["path"]).exists():
+                    missing_audio.append(part["path"])
+                    row_missing = True
+            if row_missing:
+                skipped_audio += 1
+                continue
+
             convs = []
             sys_msg = next(
                 (m for m in row["messages"] if m["role"] == "system"), None
@@ -152,27 +163,23 @@ def cmd_convert(args: argparse.Namespace) -> None:
             convs.append({"from": "human", "value": user_parts})
             # Placeholder response: the regen step replaces it on-policy.
             convs.append({"from": "gpt", "value": gt})
-
-            for part in user_parts:
-                if part["type"] == "audio" and not Path(part["path"]).exists():
-                    missing_audio.append(part["path"])
             out.write(json.dumps({"conversations": convs}, ensure_ascii=False))
             out.write("\n")
             converted += 1
 
     print(f"rows: {raw_rows}  converted: {converted}  "
           f"skipped(no response): {empty_gt}  "
+          f"skipped(missing audio): {skipped_audio}  "
           f"response_from_assistant_turn: {fallback_asst}")
     print(f"audio attach: no_marker(head): {no_marker}  "
           f"leftover_appended: {leftover_audios}  "
           f"extra_markers_dropped: {extra_markers}")
     if missing_audio:
-        print(f"missing audio files: {len(missing_audio)}")
+        print(f"missing audio files (rows skipped): {len(missing_audio)}")
         for p in missing_audio[:10]:
             print("  ", p)
-        if not args.allow_missing_audio:
-            _fail("audio files not found locally -- sync them first, or pass "
-                  "--allow-missing-audio to drop rows lazily at regen time")
+        if len(missing_audio) > 10:
+            print(f"  ... and {len(missing_audio) - 10} more")
 
 
 def _regen_one(client: OpenAI, model: str, row: dict,
@@ -201,22 +208,12 @@ def cmd_regen(args: argparse.Namespace) -> None:
         for line in f:
             if line.strip():
                 rows.append(json.loads(line))
-    # Sharding: node i processes rows where idx % shard_count == i. The
-    # partition is deterministic and disjoint (same input file, same line
-    # order on every node), so shards neither overlap nor miss rows.
-    shard_count = args.shard_count or 1
-    shard_index = args.shard_index or 0
-    if not 0 <= shard_index < shard_count:
-        _fail(f"shard-index {shard_index} out of range [0, {shard_count})")
-    if shard_count > 1:
-        rows = [r for i, r in enumerate(rows) if i % shard_count == shard_index]
     todo = list(enumerate(rows))[start_at:][: args.limit or None]
 
     client = OpenAI(base_url=args.endpoint, api_key="EMPTY", timeout=600.0,
                     max_retries=3)
     model = args.model or client.models.list().data[0].id
-    print(f"model={model} shard={shard_index}/{shard_count} "
-          f"rows_to_regenerate={len(todo)} "
+    print(f"model={model} rows_to_regenerate={len(todo)} "
           f"concurrency={args.concurrency}")
 
     def work(item: tuple[int, dict]) -> tuple[int, dict]:
@@ -250,7 +247,6 @@ def main() -> None:
     p_conv.add_argument("--input", required=True)
     p_conv.add_argument("--output", required=True)
     p_conv.add_argument("--resume", action="store_true")
-    p_conv.add_argument("--allow-missing-audio", action="store_true")
     p_conv.add_argument("--limit", type=int, default=None,
                         help="stop after N converted rows (smoke runs)")
     p_conv.set_defaults(func=cmd_convert)
@@ -266,10 +262,6 @@ def main() -> None:
     p_regen.add_argument("--max-tokens", type=int, default=2048)
     p_regen.add_argument("--temperature", type=float, default=0.0)
     p_regen.add_argument("--resume", action="store_true")
-    p_regen.add_argument("--shard-index", type=int, default=0,
-                         help="this node's shard index (0-based)")
-    p_regen.add_argument("--shard-count", type=int, default=1,
-                         help="total number of shards (set to instance count)")
     p_regen.set_defaults(func=cmd_regen)
 
     args = parser.parse_args()
