@@ -92,7 +92,7 @@ def main() -> None:
         counter: Counter = Counter()
         for ids in merged["input_ids"]:
             counter.update(ids)
-        freq_total = {str(k): int(v) for k, v in counter.items()}
+        freq_total = {int(k): int(v) for k, v in counter.items()}
         print(f"token_freq: computed from merged dataset, "
               f"{len(freq_total)} unique tokens")
     else:
