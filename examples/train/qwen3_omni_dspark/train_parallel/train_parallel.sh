@@ -38,7 +38,7 @@ if [[ -d "./speculators" && ! -f "./speculators/__init__.py" ]]; then
 fi
 
 # ===== Platform env vars =====
-MASTER_ADDR="$VC_WORKER_HOSTS"
+MASTER_ADDR="${VC_WORKER_HOSTS%%,*}"   # first host if comma-separated
 MASTER_PORT="38888"
 NNODES="$MA_NUM_HOSTS"
 NODE_RANK="$VC_TASK_INDEX"
@@ -95,8 +95,12 @@ wait_for() {  # wait_for <path> <label>
     until [[ -e "$1" ]]; do
         sleep 30; waited=$((waited + 30))
         if (( waited % 30 == 0 )); then echo "  waiting for $2 (${waited}s)"; fi
-        [[ $waited -ge "$BARRIER_TIMEOUT" ]] && { echo "ERROR: timed out waiting for $2" >&2; exit 1; }
+        if (( waited >= BARRIER_TIMEOUT )); then
+            echo "ERROR: timed out waiting for $2" >&2
+            exit 1
+        fi
     done
+    return 0
 }
 
 start_plain_server() {  # TP8 plain server for regen/render, on all 8 cards

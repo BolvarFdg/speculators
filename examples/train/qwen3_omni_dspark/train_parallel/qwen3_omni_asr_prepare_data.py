@@ -208,12 +208,22 @@ def cmd_regen(args: argparse.Namespace) -> None:
         for line in f:
             if line.strip():
                 rows.append(json.loads(line))
+    # Sharding: node i processes rows where idx % shard_count == i. The
+    # partition is deterministic and disjoint (same input file, same line
+    # order on every node), so shards neither overlap nor miss rows.
+    shard_count = args.shard_count or 1
+    shard_index = args.shard_index or 0
+    if not 0 <= shard_index < shard_count:
+        _fail(f"shard-index {shard_index} out of range [0, {shard_count})")
+    if shard_count > 1:
+        rows = [r for i, r in enumerate(rows) if i % shard_count == shard_index]
     todo = list(enumerate(rows))[start_at:][: args.limit or None]
 
     client = OpenAI(base_url=args.endpoint, api_key="EMPTY", timeout=600.0,
                     max_retries=3)
     model = args.model or client.models.list().data[0].id
-    print(f"model={model} rows_to_regenerate={len(todo)} "
+    print(f"model={model} shard={shard_index}/{shard_count} "
+          f"rows_to_regenerate={len(todo)} "
           f"concurrency={args.concurrency}")
 
     def work(item: tuple[int, dict]) -> tuple[int, dict]:
@@ -262,6 +272,10 @@ def main() -> None:
     p_regen.add_argument("--max-tokens", type=int, default=2048)
     p_regen.add_argument("--temperature", type=float, default=0.0)
     p_regen.add_argument("--resume", action="store_true")
+    p_regen.add_argument("--shard-index", type=int, default=0,
+                         help="this node's shard index (0-based)")
+    p_regen.add_argument("--shard-count", type=int, default=1,
+                         help="total number of shards (set to instance count)")
     p_regen.set_defaults(func=cmd_regen)
 
     args = parser.parse_args()
