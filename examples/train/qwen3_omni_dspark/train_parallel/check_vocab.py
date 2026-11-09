@@ -1,19 +1,25 @@
 #!/usr/bin/env python3
 """Check draft model vocabulary coverage (Chinese token presence).
 
+Correctly decodes d2t as OFFSETS (not absolute IDs): the serving side
+computes `absolute_id = arange(len(d2t)) + d2t`, so we must do the same
+here. The previous version read d2t values directly as token IDs, which
+produced false "MISSING" results for every Chinese token.
+
 Usage:
-    python3 check_vocab.py /path/to/checkpoint/model.safetensors
-    python3 check_vocab.py /path/to/checkpoint/model.safetensors --tokenizer /path/to/model
+    python3 check_vocab.py <model.safetensors> --tokenizer <model_path>
 """
 import sys
 from pathlib import Path
 
+import torch
 from safetensors import safe_open
 
 
 def main():
     if len(sys.argv) < 2:
-        print(f"Usage: python3 {sys.argv[0]} <model.safetensors> [--tokenizer <model_path>]")
+        print(f"Usage: python3 {sys.argv[0]} <model.safetensors> "
+              "[--tokenizer <model_path>]")
         sys.exit(1)
 
     ckpt = Path(sys.argv[1])
@@ -30,52 +36,57 @@ def main():
                 shape = f.get_slice(k).get_shape()
                 print(f"  {k}: {shape}")
 
-        # d2t = draft token id -> target token id mapping
         d2t = None
         for prefix in ("", "model."):
             key = f"{prefix}d2t"
             if key in f.keys():
                 d2t = f.get_tensor(key)
-                print(f"\ndraft vocab size: {len(d2t)}")
-                print(f"d2t valid mappings: {(d2t != 0).sum().item()}")
                 break
 
-        if d2t is not None:
-            # Build a set of target token IDs covered by the draft vocab
-            covered = set(d2t[d2t != 0].tolist())
-            print(f"unique target tokens covered: {len(covered)}")
-
-            if tokenizer_path:
-                check_chinese_coverage(covered, tokenizer_path)
-            else:
-                print("\n(pass --tokenizer <model_path> to check Chinese token coverage)")
+        if d2t is None:
+            # No d2t -- full vocab mode, no pruning
+            for prefix in ("", "model."):
+                key = f"{prefix}lm_head.weight"
+                if key in f.keys():
+                    shape = f.get_slice(key).get_shape()
+                    print(f"\nlm_head shape: {shape}")
+                    if shape[0] >= 152064:
+                        print("-> FULL vocab mode (no pruning, no d2t needed)")
+                        if tokenizer_path:
+                            print("-> All tokens covered by definition")
+                    break
             return
 
-        # No d2t found -- check lm_head to determine vocab mode
-        for prefix in ("", "model."):
-            key = f"{prefix}lm_head.weight"
-            if key in f.keys():
-                shape = f.get_slice(key).get_shape()
-                print(f"\nlm_head shape: {shape}")
-                if shape[0] >= 152064:
-                    print("-> FULL vocab mode (no pruning)")
-                elif shape[0] <= 40000:
-                    print(f"-> PRUNED to {shape[0]} tokens")
-                    if tokenizer_path:
-                        check_chinese_coverage_from_lmhead(
-                            f, key, shape[0], tokenizer_path
-                        )
-                break
+        # d2t stores OFFSETS: target_id = draft_idx + d2t[draft_idx]
+        # (vocab_mapping.py:98, speculator.py:94-96)
+        draft_idx = torch.arange(len(d2t))
+        absolute_ids = (draft_idx + d2t).tolist()
+
+        print(f"\ndraft vocab size: {len(d2t)}")
+        print(f"d2t format: offsets (target_id = index + d2t[index])")
+        print(f"zero offsets (identity-mapped head): {(d2t == 0).sum().item()}")
+        print(f"unique target token IDs covered: {len(set(absolute_ids))}")
+
+        # Sanity: absolute IDs should all be in [0, target_vocab_size)
+        max_id = max(absolute_ids)
+        min_id = min(absolute_ids)
+        print(f"target id range: [{min_id}, {max_id}]")
+
+        if tokenizer_path:
+            check_chinese(set(absolute_ids), tokenizer_path)
+        else:
+            print("\n(pass --tokenizer <model_path> to check Chinese coverage)")
 
 
-def check_chinese_coverage(covered_target_ids, tokenizer_path):
+def check_chinese(covered_target_ids, tokenizer_path):
     """Check whether common Chinese tokens are in the draft vocabulary."""
     from transformers import AutoTokenizer
     tok = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
 
-    words = ["我们", "时候", "因为", "所以", "可以", "知道", "这个",
+    words = ["的", "了", "是", "我", "你", "他", "这", "那", "就", "也",
+             "我们", "时候", "因为", "所以", "可以", "知道", "这个",
              "什么", "就是", "没有", "这样", "如果", "但是", "现在"]
-    print(f"\n=== Chinese token coverage (target token in draft vocab?):")
+    print(f"\n=== Chinese token coverage ({len(words)} words):")
     missing = 0
     for w in words:
         tids = tok.encode(w, add_special_tokens=False)
@@ -83,25 +94,15 @@ def check_chinese_coverage(covered_target_ids, tokenizer_path):
         status = "OK" if all(hits) else "MISSING"
         if not all(hits):
             missing += 1
-        print(f"  {w}: {tids} -> {status}")
+        print(f"  {w} (ids={tids}): {status}")
 
     if missing > 0:
         print(f"\n!! {missing}/{len(words)} Chinese words MISSING from draft vocab")
-        print("!! This explains low Chinese acceptance rates.")
     else:
-        print(f"\nAll {len(words)} Chinese words covered.")
-
-
-def check_chinese_coverage_from_lmhead(f, key, vocab_size, tokenizer_path):
-    """When lm_head is pruned, check coverage via embed_tokens shape."""
-    from transformers import AutoTokenizer
-    tok = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
-
-    # In pruned mode, draft token 0..N-1 maps to target via d2t.
-    # Without d2t we can't check exact coverage, but we can report sizes.
-    print(f"\nDraft vocab: {vocab_size} / target vocab: 152064")
-    print(f"Coverage ratio: {vocab_size / 152064 * 100:.1f}%")
-    print("\n(pass --tokenizer to check specific Chinese tokens)")
+        print(f"\nAll {len(words)} Chinese words covered -- vocabulary is healthy.")
+        print("-> Chinese acceptance issue is NOT a vocabulary problem.")
+        print("-> Investigate: Markov head quality, serving-side mapping,")
+        print("   or training data distribution.")
 
 
 if __name__ == "__main__":
