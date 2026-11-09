@@ -87,13 +87,18 @@ def main() -> None:
               f"{len(freq_total)} unique tokens")
     elif all(not f.is_file() for f in freq_files):
         # speculators prepare-data did not emit token_freq.pt in this
-        # environment; compute it from the merged dataset's input_ids.
+        # environment; compute it from the merged dataset.
+        # CRITICAL: only count tokens where loss_mask is True (the response
+        # tokens the draft is trained to predict). Counting ALL input_ids
+        # floods the frequency with audio placeholder tokens (~130 per
+        # sample), which crowd out content tokens and destroy Chinese
+        # coverage in the pruned draft vocabulary.
         from collections import Counter
         counter: Counter = Counter()
-        for ids in merged["input_ids"]:
-            counter.update(ids)
+        for ids, mask in zip(merged["input_ids"], merged["loss_mask"]):
+            counter.update(t for t, m in zip(ids, mask) if m)
         freq_total = {int(k): int(v) for k, v in counter.items()}
-        print(f"token_freq: computed from merged dataset, "
+        print(f"token_freq: computed from response tokens only, "
               f"{len(freq_total)} unique tokens")
     else:
         present = sum(f.is_file() for f in freq_files)
