@@ -72,14 +72,16 @@ NUM_LAYERS="${NUM_LAYERS:-5}"
 REGEN_CONCURRENCY="${REGEN_CONCURRENCY:-64}"
 RENDER_NUM_PROC="${RENDER_NUM_PROC:-32}"
 
-# DSpark contract parameters -- BLOCK_SIZE and MASK_TOKEN_ID are tied to
-# the vLLM serving contract; the rest are training-side tunables.
+# DSpark parameters. BLOCK_SIZE is tied to the vLLM serving contract
+# (num_speculative_tokens must equal it at serve time); the rest are
+# training-side tunables.
 BLOCK_SIZE=7
-TARGET_LAYER_IDS="2 10 18 26 34"
-DRAFT_VOCAB_SIZE="${DRAFT_VOCAB_SIZE:-32000}"   # set 152064 for full vocab
-MARKOV_RANK=64
-MASK_TOKEN_ID=151669
-LOSS_FN='{"ce": 0.1, "tv": 0.9}'
+TARGET_LAYER_IDS="${TARGET_LAYER_IDS:-1 12 23 34 45}"       # wide depth coverage
+DRAFT_VOCAB_SIZE="${DRAFT_VOCAB_SIZE:-152064}"   # full vocab: no Chinese token exclusion
+MARKOV_RANK="${MARKOV_RANK:-256}"                 # kimi reference; stronger intra-block deps
+MASK_TOKEN_ID="${MASK_TOKEN_ID:-151676}"           # 151669 collides with <|audio_start|>
+MAX_ANCHORS="${MAX_ANCHORS:-256}"                  # ASR short responses; was 3072 (waste)
+LOSS_FN="${LOSS_FN:-{\"ce\": 0.1, \"tv\": 0.9}}"
 # ========================================
 
 mkdir -p "$WORK_DIR"
@@ -257,7 +259,7 @@ ASCEND_RT_VISIBLE_DEVICES="$TRAIN_GPUS" \
     --enable-confidence-head --confidence-head-with-markov \
     --mask-token-id "$MASK_TOKEN_ID" \
     --draft-attn-impl sdpa \
-    --max-anchors 3072 --total-seq-len "$MAX_SEQ" \
+    --max-anchors "$MAX_ANCHORS" --total-seq-len "$MAX_SEQ" \
     --epochs "$EPOCHS" --lr "$LR" \
     --loss-fn "$LOSS_FN" \
     --on-missing generate
