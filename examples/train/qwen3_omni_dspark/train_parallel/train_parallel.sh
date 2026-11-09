@@ -72,10 +72,11 @@ NUM_LAYERS="${NUM_LAYERS:-5}"
 REGEN_CONCURRENCY="${REGEN_CONCURRENCY:-64}"
 RENDER_NUM_PROC="${RENDER_NUM_PROC:-32}"
 
-# DSpark contract parameters (do not change without updating serving).
+# DSpark contract parameters -- BLOCK_SIZE and MASK_TOKEN_ID are tied to
+# the vLLM serving contract; the rest are training-side tunables.
 BLOCK_SIZE=7
 TARGET_LAYER_IDS="2 10 18 26 34"
-DRAFT_VOCAB_SIZE=32000
+DRAFT_VOCAB_SIZE="${DRAFT_VOCAB_SIZE:-32000}"   # set 152064 for full vocab
 MARKOV_RANK=64
 MASK_TOKEN_ID=151669
 LOSS_FN='{"ce": 0.1, "tv": 0.9}'
