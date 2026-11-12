@@ -264,6 +264,7 @@ ASCEND_RT_VISIBLE_DEVICES="$TRAIN_GPUS" \
     --target-layer-ids $TARGET_LAYER_IDS \
     --full-attention-indices $(seq 0 $((NUM_LAYERS - 1))) \
     --sample-from-anchor \
+    --per-position-loss-weight fixed-exp-decay \
     --mask-token-id "$MASK_TOKEN_ID" \
     --draft-attn-impl sdpa \
     --max-anchors "$MAX_ANCHORS" --total-seq-len "$MAX_SEQ" \
