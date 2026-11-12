@@ -41,7 +41,7 @@ import argparse
 import json
 import re
 import sys
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import quote
 
@@ -219,12 +219,12 @@ def cmd_regen(args: argparse.Namespace) -> None:
         rows = [r for i, r in enumerate(rows) if i % shard_count == shard_index]
     todo = list(enumerate(rows))[start_at:][: args.limit or None]
 
-    client = OpenAI(base_url=args.endpoint, api_key="EMPTY", timeout=600.0,
-                    max_retries=3)
+    client = OpenAI(base_url=args.endpoint, api_key="EMPTY",
+                    timeout=args.request_timeout, max_retries=1)
     model = args.model or client.models.list().data[0].id
     print(f"model={model} shard={shard_index}/{shard_count} "
           f"rows_to_regenerate={len(todo)} "
-          f"concurrency={args.concurrency}")
+          f"concurrency={args.concurrency} timeout={args.request_timeout}s")
 
     def work(item: tuple[int, dict]) -> tuple[int, dict]:
         idx, row = item
@@ -232,21 +232,40 @@ def cmd_regen(args: argparse.Namespace) -> None:
         row["conversations"][-1]["value"] = text or row["conversations"][-1]["value"]
         return idx, row
 
-    results, failures = {}, 0
-    with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
-        for idx, row in pool.map(work, todo):
-            if not (row["conversations"][-1]["value"] or "").strip():
-                failures += 1
-            results[idx] = row
+    # Fault-tolerant: submit + as_completed so a single timeout does not
+    # abort the whole batch. Results are written incrementally so --resume
+    # picks up everything completed before any interruption.
+    succeeded, failed = 0, 0
+    failed_log = out_path.with_suffix(".failed.log")
+    mode = "a" if start_at else "w"
+    with out_path.open(mode) as out, failed_log.open(mode) as ferr:
+        with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
+            futures = {pool.submit(work, item): item[0] for item in todo}
+            for future in as_completed(futures):
+                idx = futures[future]
+                try:
+                    idx, row = future.result()
+                    if not (row["conversations"][-1]["value"] or "").strip():
+                        failed += 1
+                        ferr.write(f"{idx}\tempty_response\n")
+                        ferr.flush()
+                    else:
+                        out.write(json.dumps(row, ensure_ascii=False))
+                        out.write("\n")
+                        out.flush()
+                        succeeded += 1
+                except Exception as e:
+                    failed += 1
+                    ferr.write(f"{idx}\t{type(e).__name__}: {e}\n")
+                    ferr.flush()
+                    if succeeded % 1000 == 0 and succeeded > 0:
+                        print(f"  progress: {succeeded} ok, {failed} failed")
 
-    with out_path.open("a" if start_at else "w") as out:
-        for idx in sorted(results):
-            out.write(json.dumps(results[idx], ensure_ascii=False))
-            out.write("\n")
-    print(f"regenerated: {len(results)}  empty_responses: {failures} "
+    print(f"regenerated: {succeeded}  failed: {failed} "
           f"-> {out_path}")
-    if failures:
-        _fail(f"{failures} rows came back empty; re-run with --resume")
+    if failed:
+        print(f"failed indices logged to: {failed_log}")
+        _fail(f"{failed} rows failed; re-run with --resume to retry them")
 
 
 def main() -> None:
@@ -272,6 +291,8 @@ def main() -> None:
     p_regen.add_argument("--max-tokens", type=int, default=2048)
     p_regen.add_argument("--temperature", type=float, default=0.0)
     p_regen.add_argument("--resume", action="store_true")
+    p_regen.add_argument("--request-timeout", type=float, default=3600.0,
+                         help="per-request timeout in seconds (default 3600)")
     p_regen.add_argument("--shard-index", type=int, default=0,
                          help="this node's shard index (0-based)")
     p_regen.add_argument("--shard-count", type=int, default=1,
