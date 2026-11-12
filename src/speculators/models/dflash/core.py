@@ -35,6 +35,38 @@ logger = logging.getLogger(__name__)
 _compiled_create_block_mask = torch.compile(create_block_mask)
 
 
+def _strip_draft_mrope(config: PretrainedConfig) -> PretrainedConfig:
+    """Drop MRoPE sections inherited from multimodal verifiers (e.g. Qwen3-Omni).
+
+    DFlash-family drafts run on 1-D logical positions both in training (the
+    dataloader emits flat position_ids) and in vLLM (the speculator feeds the
+    draft scalar positions; the DSpark/Qwen3-Omni contract likewise rejects
+    mrope_section in draft configs). An mrope_section inherited from an MRoPE
+    verifier would therefore mis-rotate or crash. Keep the verifier's
+    rope_theta and fall back to the default rope type.
+    """
+    stripped = False
+    for attr in ("rope_parameters", "rope_scaling"):
+        params = getattr(config, attr, None)
+        if not isinstance(params, dict) or "mrope_section" not in params:
+            continue
+        params = {
+            k: v
+            for k, v in params.items()
+            if k not in ("mrope_section", "partial_rotary_factor")
+        }
+        params["rope_type"] = "default"
+        setattr(config, attr, params)
+        stripped = True
+    if stripped:
+        logger.warning(
+            "Stripped mrope_section from the draft rope config inherited from an "
+            "MRoPE verifier (e.g. Qwen3-Omni/Qwen3-VL); DFlash-family drafts use "
+            "1-D positions in both training and vLLM serving."
+        )
+    return config
+
+
 @SpeculatorModel.register("dflash")
 class DFlashDraftModel(DraftVocabMixin, SpeculatorModel):
     config_class: ClassVar[type[DFlashSpeculatorConfig]] = DFlashSpeculatorConfig  # type: ignore[misc]
@@ -235,6 +267,7 @@ class DFlashDraftModel(DraftVocabMixin, SpeculatorModel):
             kwargs["verifier_name_or_path"],
             trust_remote_code=kwargs.get("trust_remote_code", False),
         )
+        verifier_config = _strip_draft_mrope(verifier_config)
         verifier_config._attn_implementation = kwargs.get(  # noqa: SLF001
             "draft_attn_impl", "simple_flex_attention"
         )

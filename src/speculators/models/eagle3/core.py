@@ -19,6 +19,7 @@ from speculators.models.eagle3.metrics import compute_metrics
 from speculators.models.eagle3.model_definitions import model_classes
 from speculators.models.utils import (
     conditional_torch_compile,
+    extract_text_config,
     flatten_rope_parameters,
     resolve_target_layer_ids,
 )
@@ -179,9 +180,8 @@ class Eagle3DraftModel(DraftVocabMixin, SpeculatorModel):
         verifier_config = self.config.speculators_config.verifier
         verifier_model_config = AutoConfig.from_pretrained(verifier_config.name_or_path)  # type: ignore[arg-type]
 
-        # For multimodal models (Qwen3VL, etc.), extract text_config
-        if hasattr(verifier_model_config, "text_config"):
-            verifier_model_config = verifier_model_config.text_config
+        # For multimodal models (Qwen3VL, Qwen3-Omni, etc.), extract text_config
+        verifier_model_config = extract_text_config(verifier_model_config)
 
         if verifier_model_config.hidden_size != self.hidden_size:
             raise ValueError(

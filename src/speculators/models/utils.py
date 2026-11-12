@@ -76,6 +76,31 @@ def conditional_torch_compile(func=None, *args, **kwargs):
     return func
 
 
+def extract_text_config(config: PretrainedConfig) -> PretrainedConfig:
+    """Unwrap a composite/multimodal config down to its text-LLM config.
+
+    Handles two nesting layouts:
+
+    * flat composites (Qwen3-VL, Llama-4, ...): the LLM config sits behind a
+      top-level ``text_config`` attribute.
+    * omni composites (Qwen3-Omni, Qwen2.5-Omni): the top-level config only
+      exposes ``thinker_config``/``talker_config``/``code2wav_config``, and the
+      LLM config is nested under ``thinker_config.text_config``. The talker is
+      a speech-synthesis decoder and must never be used as the verifier.
+
+    Plain text configs are returned unchanged.
+    """
+    if hasattr(config, "thinker_config"):
+        thinker = getattr(config, "thinker_config", None)
+        if thinker is not None:
+            config = getattr(thinker, "text_config", thinker)
+    if hasattr(config, "text_config"):
+        text_config = getattr(config, "text_config", None)
+        if text_config is not None:
+            config = text_config
+    return config
+
+
 def get_verifier_config(
     verifier_name_or_path: str,
     trust_remote_code: bool = False,
@@ -84,9 +109,7 @@ def get_verifier_config(
         verifier_name_or_path,
         trust_remote_code=trust_remote_code,
     )
-    if hasattr(verifier_config, "text_config"):
-        verifier_config = verifier_config.text_config
-    return verifier_config
+    return extract_text_config(verifier_config)
 
 
 DEFAULT_TARGET_LAYER_IDS_WARNING = (

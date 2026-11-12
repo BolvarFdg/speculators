@@ -446,12 +446,14 @@ def _save_vllm_provenance(
 def _build_train_cmd(args, vllm_args):
     from transformers import AutoConfig  # noqa: PLC0415
 
+    from speculators.models.utils import extract_text_config  # noqa: PLC0415
+
     config = AutoConfig.from_pretrained(
         args.model,
         trust_remote_code=args.trust_remote_code,
     )
-    if hasattr(config, "text_config"):
-        config = config.text_config
+    # For multimodal models (Qwen3VL, Qwen3-Omni, etc.), extract text_config
+    config = extract_text_config(config)
     num_hidden_layers = config.num_hidden_layers
 
     if args.target_layer_ids:

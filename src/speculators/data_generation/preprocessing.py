@@ -3,6 +3,7 @@ import os
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Literal, TypedDict
+from urllib.parse import quote
 
 import torch
 from datasets import Dataset as HFDataset
@@ -164,7 +165,7 @@ def _adapt_part_for_vllm(part: str | dict):
     for modality in ("image", "video", "audio"):
         if part_type == modality:
             if local_path := part.get("path"):
-                file_url = f"file://{Path(local_path).absolute()}"
+                file_url = f"file://{quote(str(Path(local_path).absolute()))}"
                 return {"type": f"{modality}_url", f"{modality}_url": {"url": file_url}}
             if url := part.get("url"):
                 return {"type": f"{modality}_url", f"{modality}_url": {"url": url}}

@@ -216,6 +216,72 @@ def test_resolve_key_llm_aliases():
     assert _resolve_key("model.norm.weight", wm) == "model.llm.norm.weight"
 
 
+# Omni (Qwen3-Omni / Qwen2.5-Omni) tower disambiguation tests
+
+OMNI_WEIGHT_MAP = {
+    "model.thinker.model.embed_tokens.weight": "shard-0.safetensors",
+    "model.thinker.model.norm.weight": "shard-0.safetensors",
+    "model.thinker.lm_head.weight": "shard-0.safetensors",
+    # The talker ships its own text stack whose keys share the same suffixes
+    # (and are shorter, so the plain shortest-suffix rule would pick them).
+    "model.talker.llm.embed_tokens.weight": "shard-1.safetensors",
+    "model.talker.llm.norm.weight": "shard-1.safetensors",
+    "model.talker.llm.lm_head.weight": "shard-1.safetensors",
+    "model.code2wav.final_proj.weight": "shard-2.safetensors",
+}
+
+
+@pytest.mark.smoke
+def test_resolve_key_omni_prefers_thinker_embed_tokens():
+    # The talker's embed key is shorter, but the thinker (text tower) must win.
+    assert (
+        _resolve_key("embed_tokens.weight", OMNI_WEIGHT_MAP)
+        == "model.thinker.model.embed_tokens.weight"
+    )
+
+
+@pytest.mark.smoke
+def test_resolve_key_omni_prefers_thinker_lm_head():
+    assert (
+        _resolve_key("lm_head.weight", OMNI_WEIGHT_MAP)
+        == "model.thinker.lm_head.weight"
+    )
+
+
+@pytest.mark.smoke
+def test_resolve_key_omni_prefers_thinker_final_norm():
+    assert (
+        _resolve_key("model.norm.weight", OMNI_WEIGHT_MAP)
+        == "model.thinker.model.norm.weight"
+    )
+
+
+@pytest.mark.smoke
+def test_resolve_key_aux_towers_dropped_without_thinker():
+    # A talker/code2wav-only map (thinker stripped at save time) must not
+    # silently resolve verifier weights from the speech towers; resolution
+    # falls through to the aliases and finally returns None.
+    wm = {
+        "model.talker.llm.embed_tokens.weight": "shard-0.safetensors",
+        "model.code2wav.embed_tokens.weight": "shard-1.safetensors",
+    }
+    assert _resolve_key("embed_tokens.weight", wm) is None
+
+
+@pytest.mark.smoke
+def test_resolve_key_thinker_preferred_over_plain_prefix():
+    # Checkpoints saved from the thinker-only model use bare model./lm_head.
+    # prefixes; when both layouts coexist, the thinker subtree wins.
+    wm = {
+        "model.embed_tokens.weight": "shard-0.safetensors",
+        "model.thinker.model.embed_tokens.weight": "shard-1.safetensors",
+    }
+    assert (
+        _resolve_key("embed_tokens.weight", wm)
+        == "model.thinker.model.embed_tokens.weight"
+    )
+
+
 # _resolve_file Tests
 
 

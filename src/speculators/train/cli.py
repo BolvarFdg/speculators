@@ -23,6 +23,7 @@ from speculators.models.eagle3.data import shift_batch
 from speculators.models.eagle3.rotary_partial import install_partial_neox_rotary
 from speculators.models.mtp.data import shift_batch_mtp
 from speculators.models.utils import (
+    extract_text_config,
     get_verifier_config,
     resolve_draft_intermediate_size,
 )
@@ -149,9 +150,8 @@ def create_transformer_layer_config(  # noqa: C901
         trust_remote_code=trust_remote_code,
     )
 
-    # For multimodal models (Qwen3VL, etc.), extract text_config
-    if hasattr(verifier_config, "text_config"):
-        verifier_config = verifier_config.text_config
+    # For multimodal models (Qwen3VL, Qwen3-Omni, etc.), extract text_config
+    verifier_config = extract_text_config(verifier_config)
 
     if getattr(verifier_config, "is_heterogeneous", False) and hasattr(
         verifier_config, "allow_global_per_layer_attribute_access"
@@ -433,8 +433,7 @@ def parse_vocab_mappings(args: argparse.Namespace):
                     args.verifier_name_or_path,
                     trust_remote_code=args.trust_remote_code,
                 )
-                if hasattr(verifier_config, "text_config"):
-                    verifier_config = verifier_config.text_config
+                verifier_config = extract_text_config(verifier_config)
                 result = None, None, verifier_config.vocab_size
 
     if is_distributed():

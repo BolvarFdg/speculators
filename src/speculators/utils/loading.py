@@ -24,16 +24,44 @@ _WEIGHT_ALIASES: dict[str, list[str]] = {
     ],
 }
 
+# Omni-style checkpoints (Qwen3-Omni, Qwen2.5-Omni) ship several towers under
+# one weight map: the text "thinker", the speech-synthesis "talker", and the
+# vocoder "code2wav". The talker/code2wav subtrees contain their own
+# embed_tokens/lm_head/norm tensors whose keys share the suffixes resolved
+# below, so they must be dropped whenever a non-auxiliary alternative exists
+# (and the thinker subtree wins outright when present).
+_AUX_TOWER_MARKERS = ("talker.", "code2wav.")
+_TEXT_TOWER_MARKER = "thinker."
+
+
+def _prefer_text_tower(matches: list[str]) -> list[str]:
+    """Disambiguate suffix matches between an omni checkpoint's towers.
+
+    Returns only the keys that may hold verifier (text-LLM) weights: talker
+    and code2wav subtrees are dropped outright -- they must never silently
+    masquerade as the text tower -- and the thinker subtree wins over other
+    non-auxiliary candidates when present.
+    """
+    non_aux = [k for k in matches if not any(m in k for m in _AUX_TOWER_MARKERS)]
+    if not non_aux:
+        return []
+    thinker = [k for k in non_aux if _TEXT_TOWER_MARKER in k]
+    return thinker or non_aux
+
 
 def _resolve_key(name: str, weight_map: dict[str, str]) -> str | None:
     """Try exact match, then suffix match, then known aliases.
 
-    When multiple keys share a suffix, the shortest key wins (most specific).
+    When multiple keys share a suffix, the shortest key wins (most specific),
+    with omni-style towers disambiguated first (thinker preferred, talker and
+    code2wav dropped when an alternative exists).
     """
     for candidate in [name, *_WEIGHT_ALIASES.get(name, [])]:
         if candidate in weight_map:
             return candidate
-        matches = [k for k in weight_map if k.endswith(candidate)]
+        matches = _prefer_text_tower(
+            [k for k in weight_map if k.endswith(candidate)]
+        )
         if matches:
             return min(matches, key=len)
     return None

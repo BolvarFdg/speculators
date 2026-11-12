@@ -9,6 +9,8 @@ from datasets import Dataset as HFDataset
 from tqdm import tqdm  # type: ignore[import-untyped]
 from transformers import AutoConfig
 
+from speculators.models.utils import extract_text_config
+
 logger = logging.getLogger("speculators")
 
 __all__ = [
@@ -128,8 +130,7 @@ def get_target_vocab_size(
         trust_remote_code=trust_remote_code,
     )
 
-    # For multimodal models (Qwen3VL, etc.), extract text_config
-    if hasattr(config, "text_config"):
-        config = config.text_config
+    # For multimodal models (Qwen3VL, Qwen3-Omni, etc.), extract text_config
+    config = extract_text_config(config)
 
     return config.vocab_size
