@@ -145,6 +145,12 @@ if [[ ! -s "$CONV_DATA" ]]; then
 else
     echo "=== phase 1 skipped: $CONV_DATA exists ==="
 fi
+[[ -s "$CONV_DATA" ]] || {
+    echo "ERROR: $CONV_DATA is empty -- convert produced 0 rows." >&2
+    echo "       Check the raw jsonl layout and that its audio paths exist on" >&2
+    echo "       this machine; then delete the file and re-run." >&2
+    exit 1
+}
 
 # ================= Phase 2: on-policy regen =================
 REGEN_FLAG="$WORK_DIR/.regen_done"
@@ -167,6 +173,11 @@ if [[ ! -f "$REGEN_FLAG" ]]; then
 else
     echo "=== phase 2 skipped: $REGEN_FLAG exists ==="
 fi
+[[ -s "$ONPOLICY" ]] || {
+    echo "ERROR: $ONPOLICY is empty -- regen produced 0 rows." >&2
+    echo "       Delete it and the .regen_done flag, then re-run." >&2
+    exit 1
+}
 
 # ================= Phase 3: render =================
 RENDER_FLAG="$WORK_DIR/.render_done"

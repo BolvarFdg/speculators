@@ -83,6 +83,7 @@ def _adapt_turn(turn: dict) -> dict:
 
 def cmd_convert(args: argparse.Namespace) -> None:
     raw_rows, converted, empty_gt, fallback_asst = 0, 0, 0, 0
+    no_user_or_audios = 0
     no_marker, leftover_audios, extra_markers, skipped_audio = 0, 0, 0, 0
     missing_audio = []
     out_path = Path(args.output)
@@ -118,6 +119,21 @@ def cmd_convert(args: argparse.Namespace) -> None:
             )
             audios = row.get("audios") or []
             if user_msg is None or not audios:
+                no_user_or_audios += 1
+                if no_user_or_audios <= 3:
+                    roles = [
+                        m.get("role", m.get("from")) for m in row["messages"]
+                    ]
+                    audio_like = sorted(
+                        k for k in row if "audio" in k.lower()
+                    )
+                    print(
+                        f"  [skip no user/audios] top-level keys="
+                        f"{sorted(row.keys())}\n"
+                        f"                    message roles={roles} "
+                        f"audio-like fields={audio_like}",
+                        file=sys.stderr,
+                    )
                 continue
 
             user_parts, audio_idx = [], 0
@@ -174,6 +190,7 @@ def cmd_convert(args: argparse.Namespace) -> None:
     print(f"rows: {raw_rows}  converted: {converted}  "
           f"skipped(no response): {empty_gt}  "
           f"skipped(missing audio): {skipped_audio}  "
+          f"skipped(no user msg / no audios field): {no_user_or_audios}  "
           f"response_from_assistant_turn: {fallback_asst}")
     print(f"audio attach: no_marker(head): {no_marker}  "
           f"leftover_appended: {leftover_audios}  "
@@ -184,6 +201,17 @@ def cmd_convert(args: argparse.Namespace) -> None:
             print("  ", p)
         if len(missing_audio) > 10:
             print(f"  ... and {len(missing_audio) - 10} more")
+    if converted == 0:
+        _fail(
+            f"converted 0 of {raw_rows} rows. Check the skip counters above: "
+            "'no user msg / no audios field' means the raw jsonl layout does "
+            "not match (expected messages[] with role 'user' plus an 'audios' "
+            "list; see the [skip ...] diagnostics for the actual layout); "
+            "'missing audio' means the absolute audio paths from the raw "
+            "jsonl do not exist on this machine. An empty conversations file "
+            "would trickle down and crash phase 3 with a cryptic "
+            "StopIteration."
+        )
 
 
 def _regen_one(client: OpenAI, model: str, row: dict,
@@ -212,6 +240,11 @@ def cmd_regen(args: argparse.Namespace) -> None:
         for line in f:
             if line.strip():
                 rows.append(json.loads(line))
+    if not rows:
+        _fail(
+            f"input has no rows: {in_path} is empty or blank-lines-only. Fix "
+            "the upstream convert step (or its input) and re-run."
+        )
     # Sharding: node i processes rows where idx % shard_count == i. The
     # partition is deterministic and disjoint (same input file, same line
     # order on every node), so shards neither overlap nor miss rows.
@@ -244,6 +277,12 @@ def cmd_regen(args: argparse.Namespace) -> None:
                 failures += 1
             results[idx] = row
 
+    if not results and not start_at:
+        _fail(
+            f"regenerated 0 rows into {out_path} (input had {len(rows)} rows). "
+            "Refusing to write an empty file that would crash phase 3 with a "
+            "cryptic StopIteration."
+        )
     with out_path.open("a" if start_at else "w") as out:
         for idx in sorted(results):
             out.write(json.dumps(results[idx], ensure_ascii=False))

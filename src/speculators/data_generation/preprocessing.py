@@ -751,17 +751,26 @@ def load_raw_dataset(
 
     # 2. Local file
     if train_data_path.endswith((".jsonl", ".json")):
+        local_file = Path(train_data_path)
+        if local_file.is_file() and local_file.stat().st_size == 0:
+            raise ValueError(
+                f"Dataset file is empty (0 bytes): {train_data_path}. Fix the "
+                "upstream data-generation step instead of retrying here."
+            )
         return load_dataset("json", data_files=train_data_path, split="train"), None
 
     # 3. Local directory
     path = Path(train_data_path)
     if path.is_dir():
         data_files = sorted(
-            str(p) for p in (*path.rglob("*.json"), *path.rglob("*.jsonl"))
+            str(p)
+            for p in (*path.rglob("*.json"), *path.rglob("*.jsonl"))
+            if p.stat().st_size > 0
         )
         if not data_files:
             raise ValueError(
-                f"No .json/.jsonl files found in directory: {train_data_path}"
+                f"No non-empty .json/.jsonl files found in directory: "
+                f"{train_data_path}"
             )
         return load_dataset("json", data_files=data_files, split="train"), None
 
