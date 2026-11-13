@@ -95,9 +95,12 @@ routed to the DFlash2 speculator automatically). On NPU also pass
 `--enforce-eager` and V2 model runner settings per the vllm-ascend
 speculative-decoding guide.
 
-## Scaling out later
+## Scaling out
 
-`qwen3_omni_asr_prepare_data.py` keeps its `--shard-index/--shard-count`
-arguments, so the multi-node evolution is: each node regens its shard,
-renders it into its own `prepared_shard{N}/`, rank 0 merges (reuse
-`merge_prepared.py` from the dspark pipeline), then phase 4 unchanged.
+The multi-node pipeline lives in `train_parallel/train_parallel_dflash2.sh`
+(Huawei Cloud platform env vars, NFS-flag barriers, per-node sharded
+regen/render, rank-0 merge, multi-node torchrun DDP). It reuses this
+folder's `cluster_env.sh`, `qwen3_omni_asr_prepare_data.py` (shard-aware),
+and its own `merge_prepared.py` (no token_freq: DFlash2 trains on the full
+verifier vocabulary). Run the single-node pipeline end-to-end before
+scaling out.
