@@ -83,6 +83,11 @@ REGEN_CONCURRENCY="${REGEN_CONCURRENCY:-64}"
 REGEN_MAX_TOKENS="${REGEN_MAX_TOKENS:-2048}"
 RENDER_NUM_PROC="${RENDER_NUM_PROC:-32}"
 MAX_SEQ="${MAX_SEQ:-4096}"
+# NFS stagger: concurrent cold reads of the ~60GB verifier across nodes
+# saturate aggregate NFS bandwidth and trigger NPU runtime
+# memory-allocation timeouts. Rank N waits N*STAGGER_SECONDS before every
+# model load (phase 2/3 plain server AND phase 4 extraction server).
+STAGGER_SECONDS="${STAGGER_SECONDS:-30}"
 
 # ===== Training hyperparameters =====
 EPOCHS="${EPOCHS:-3}"
@@ -126,16 +131,16 @@ wait_for() {  # wait_for <path> <label>
     return 0
 }
 
-start_plain_server() {  # TP8 plain server for regen/render, on all 8 cards
-    # Stagger: rank 0 starts immediately, rank N waits N*30s so nodes don't
-    # all hammer the NFS for model weights simultaneously (aggregate NFS
-    # bandwidth is the bottleneck; N concurrent 60GB reads cause NPU
-    # runtime memory-allocation timeouts).
-    local delay=$(( NODE_RANK * 30 ))
+nfs_stagger() {  # rank N waits N*STAGGER_SECONDS before touching model weights
+    local delay=$(( NODE_RANK * STAGGER_SECONDS ))
     if [[ $delay -gt 0 ]]; then
         echo "=== [$NODE_RANK] waiting ${delay}s before server start (NFS stagger) ==="
         sleep "$delay"
     fi
+}
+
+start_plain_server() {  # TP8 plain server for regen/render, on all 8 cards
+    nfs_stagger
     echo "=== [$NODE_RANK] starting plain TP8 server (regen/render) ==="
     ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
         vllm serve "$MODEL" \
@@ -255,6 +260,11 @@ echo "=== [$NODE_RANK] all data ready ==="
 
 # ================= Phase 4: training (existing layout) =================
 echo "=== [$NODE_RANK] phase 4: extraction server + training ==="
+# The extraction server loads the same ~60GB verifier from NFS; without the
+# stagger all N nodes cold-read simultaneously and hit the same NPU
+# allocation timeouts as phase 2. torchrun's rendezvous absorbs the skew:
+# early nodes simply wait for late ones to connect.
+nfs_stagger
 ASCEND_RT_VISIBLE_DEVICES="$SERVER_GPUS" \
     python "$LAUNCH_VLLM" train "$MODEL" \
     --target-layer-ids $TARGET_LAYER_IDS \
