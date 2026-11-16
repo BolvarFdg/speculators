@@ -84,7 +84,7 @@ RENDER_NUM_PROC="${RENDER_NUM_PROC:-32}"
 # DFlash parameters. BLOCK_SIZE is tied to the vLLM serving contract
 # (num_speculative_tokens must equal it at serve time); --sample-from-anchor
 # keeps 7 speculative tokens per block (same as DFlash behavior).
-BLOCK_SIZE=7
+BLOCK_SIZE="${BLOCK_SIZE:-7}"
 TARGET_LAYER_IDS="${TARGET_LAYER_IDS:-1 12 23 34 45}"       # wide depth coverage
 DRAFT_VOCAB_SIZE="${DRAFT_VOCAB_SIZE:-64000}"     # 64K: covers CJK+EN, draft stays fast
 MASK_TOKEN_ID="${MASK_TOKEN_ID:-151676}"           # 151669 collides with <|audio_start|>

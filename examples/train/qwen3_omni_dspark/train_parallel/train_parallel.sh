@@ -75,7 +75,7 @@ RENDER_NUM_PROC="${RENDER_NUM_PROC:-32}"
 # DSpark parameters. BLOCK_SIZE is tied to the vLLM serving contract
 # (num_speculative_tokens must equal it at serve time); the rest are
 # training-side tunables.
-BLOCK_SIZE=7
+BLOCK_SIZE="${BLOCK_SIZE:-7}"
 TARGET_LAYER_IDS="${TARGET_LAYER_IDS:-1 12 23 34 45}"       # wide depth coverage
 DRAFT_VOCAB_SIZE="${DRAFT_VOCAB_SIZE:-152064}"   # full vocab: no Chinese token exclusion
 MARKOV_RANK="${MARKOV_RANK:-256}"                 # kimi reference; stronger intra-block deps
